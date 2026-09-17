@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="100" fill="#1e3a8a"/>
+  <!-- Fabric roll & ruler graphic -->
+  <path d="M120 160 C120 130, 200 110, 300 110 C400 110, 440 130, 440 160 L440 330 C440 360, 400 380, 300 380 C200 380, 120 360, 120 330 Z" fill="#2563eb" opacity="0.8"/>
+  <ellipse cx="220" cy="160" rx="90" ry="45" fill="#38bdf8"/>
+  <path d="M130 160 L130 330 C130 350, 170 370, 220 370 C270 370, 310 350, 310 330 L310 160" fill="none" stroke="#0284c7" stroke-width="8"/>
+  <!-- Scissors / needle cutting symbol -->
+  <circle cx="350" cy="340" r="30" fill="none" stroke="#f8fafc" stroke-width="12"/>
+  <circle cx="390" cy="380" r="30" fill="none" stroke="#f8fafc" stroke-width="12"/>
+  <line x1="330" y1="320" x2="220" y2="210" stroke="#f8fafc" stroke-width="14" stroke-linecap="round"/>
+  <line x1="370" y1="360" x2="260" y2="250" stroke="#f8fafc" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="295" cy="285" r="8" fill="#e2e8f0"/>
+  <!-- Tape measure markings -->
+  <line x1="150" y1="410" x2="410" y2="410" stroke="#fbbf24" stroke-width="16" stroke-linecap="round"/>
+  <line x1="180" y1="410" x2="180" y2="402" stroke="#b45309" stroke-width="4"/>
+  <line x1="210" y1="410" x2="210" y2="398" stroke="#b45309" stroke-width="4"/>
+  <line x1="240" y1="410" x2="240" y2="402" stroke="#b45309" stroke-width="4"/>
+  <line x1="270" y1="410" x2="270" y2="396" stroke="#b45309" stroke-width="6"/>
+  <line x1="300" y1="410" x2="300" y2="402" stroke="#b45309" stroke-width="4"/>
+  <line x1="330" y1="410" x2="330" y2="398" stroke="#b45309" stroke-width="4"/>
+  <line x1="360" y1="410" x2="360" y2="402" stroke="#b45309" stroke-width="4"/>
+  <line x1="390" y1="410" x2="390" y2="396" stroke="#b45309" stroke-width="6"/>
+</svg>

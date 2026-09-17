@@ -1,0 +1,6 @@
+{
+  "name": "GarmentPro - Konsumsi Bahan",
+  "description": "Aplikasi modular produksi garment untuk perhitungan kebutuhan konsumsi bahan baku, master data, dan sinkronisasi Google Sheets",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
