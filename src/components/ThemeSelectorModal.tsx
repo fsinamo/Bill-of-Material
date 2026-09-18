@@ -17,7 +17,7 @@ export const ThemeSelectorModal: React.FC<ThemeSelectorModalProps> = ({
   return (
     <div
       id="theme-selector-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs animate-in fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs animate-in fade-in print:hidden"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

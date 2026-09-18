@@ -62,6 +62,18 @@ export default function App() {
   // Modal print calculation
   const [calculationToPrint, setCalculationToPrint] = useState<CalculationRecord | null>(null);
 
+  // Sync report-modal-open class on body for clean printer media isolation
+  useEffect(() => {
+    if (calculationToPrint) {
+      document.body.classList.add('report-modal-open');
+    } else {
+      document.body.classList.remove('report-modal-open');
+    }
+    return () => {
+      document.body.classList.remove('report-modal-open');
+    };
+  }, [calculationToPrint]);
+
   // Apply theme on load and change
   useEffect(() => {
     applyThemeToDocument(currentTheme);
@@ -218,7 +230,7 @@ export default function App() {
     <div className="min-h-screen bg-[var(--app-canvas-bg,#f4f7f2)] flex flex-col font-sans transition-colors duration-200">
       {/* Offline Alert Strip */}
       {!isOnline && (
-        <div className="bg-amber-600 px-4 py-1.5 text-center text-xs font-semibold text-white flex items-center justify-center gap-2">
+        <div className="bg-amber-600 px-4 py-1.5 text-center text-xs font-semibold text-white flex items-center justify-center gap-2 print:hidden">
           <WifiOff className="w-3.5 h-3.5" />
           <span>Mode Offline — Aplikasi tetap berjalan lancar menggunakan penyimpanan lokal.</span>
         </div>
@@ -390,7 +402,7 @@ export default function App() {
       </header>
 
       {/* Main Content Body */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
+      <main className={`flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 ${calculationToPrint ? 'print:hidden' : ''}`}>
         {activeTab === 'calculator' && (
           <ConsumptionCalculator
             products={products}
@@ -470,6 +482,10 @@ export default function App() {
           onReturnHome={() => {
             setCalculationToPrint(null);
             setActiveTab('calculator');
+          }}
+          onUpdateCalculation={(updated) => {
+            handleSaveCalculation(updated);
+            setCalculationToPrint(updated);
           }}
         />
       )}

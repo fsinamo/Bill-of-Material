@@ -109,3 +109,124 @@
   --app-header-border: #1e293b;
   --app-canvas-bg: #f1f5f9;
 }
+
+/* ==========================================================================
+   PRINT MEDIA STYLING (A4 Clean Multi-Page Document)
+   Solves duplicated data rendering and preserves authentic visual appearance
+   ========================================================================== */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 15mm 15mm 15mm;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* When printing from the report modal, hide all background application chrome */
+  body.report-modal-open header,
+  body.report-modal-open main,
+  body.report-modal-open footer,
+  body.report-modal-open #theme-selector-backdrop,
+  header.print\:hidden,
+  footer.print\:hidden,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Modal un-nesting: eliminate fixed positioning, backdrop and clipping */
+  body.report-modal-open #print-report-modal-backdrop,
+  #print-report-modal-backdrop {
+    position: static !important;
+    inset: auto !important;
+    z-index: auto !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    backdrop-filter: none !important;
+  }
+
+  body.report-modal-open #print-report-modal-dialog,
+  #print-report-modal-dialog {
+    position: static !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    display: block !important;
+    background: #ffffff !important;
+  }
+
+  body.report-modal-open #print-report-scroll-area,
+  #print-report-scroll-area {
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+  }
+
+  #printable-report {
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    min-height: 0 !important;
+    background: #ffffff !important;
+  }
+
+  /* Table & pagination rules */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tfoot {
+    display: table-footer-group !important;
+  }
+
+  tr {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .print-avoid-break {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+}

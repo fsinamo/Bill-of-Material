@@ -114,6 +114,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
   }, []);
 
   const handlePrint = () => {
+    document.body.classList.add('report-modal-open');
     window.print();
   };
 
@@ -299,7 +300,8 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto"
+      id="print-report-modal-backdrop"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto print:static print:inset-auto print:z-auto print:p-0 print:m-0 print:bg-white print:overflow-visible print:block print:w-full"
       onClick={(e) => {
         if (e.target === e.currentTarget) {
           handleReturnHome();
@@ -307,7 +309,8 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
       }}
     >
       <div
-        className="relative w-full max-w-5xl rounded-2xl bg-white shadow-2xl my-2 sm:my-4 border border-slate-200 flex flex-col max-h-[96vh] overflow-hidden"
+        id="print-report-modal-dialog"
+        className="relative w-full max-w-5xl rounded-2xl bg-white shadow-2xl my-2 sm:my-4 border border-slate-200 flex flex-col max-h-[96vh] overflow-hidden print:static print:max-w-none print:w-full print:rounded-none print:shadow-none print:border-none print:m-0 print:p-0 print:overflow-visible print:max-h-none print:block"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Sticky Top Toolbar */}
@@ -460,15 +463,17 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
         </div>
 
         {/* Scrollable Document Body */}
-        <div className="flex-1 overflow-y-auto bg-slate-200/70 p-3 sm:p-6 lg:p-8 flex justify-center">
+        <div
+          id="print-report-scroll-area"
+          className="flex-1 overflow-y-auto bg-slate-200/70 p-3 sm:p-6 lg:p-8 flex justify-center print:overflow-visible print:p-0 print:m-0 print:bg-white print:block print:w-full"
+        >
           {/* Printable Document Paper (Simulates A4 Sheet) */}
           <div
             id="printable-report"
-            className="w-full max-w-[820px] bg-white rounded-xl shadow-lg border border-slate-300/80 p-8 sm:p-12 text-slate-900 print:shadow-none print:border-none print:p-0"
-            style={{ minHeight: '1050px' }}
+            className="w-full max-w-[820px] bg-white rounded-xl shadow-lg border border-slate-300/80 p-8 sm:p-12 text-slate-900 min-h-[1050px] print:min-h-0 print:shadow-none print:border-none print:p-0 print:m-0 print:max-w-none print:w-full print:rounded-none"
           >
             {/* Header Surat */}
-            <div className="flex items-start justify-between border-b-2 border-slate-900 pb-5">
+            <div className="flex items-start justify-between border-b-2 border-slate-900 pb-5 print-avoid-break">
               <div className="flex items-center gap-3.5">
                 {/* Logo Perusahaan */}
                 <div className="shrink-0">
@@ -476,11 +481,11 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                     <img
                       src={modalCompanyLogo}
                       alt="Logo Perusahaan"
-                      className="h-14 w-auto max-h-16 max-w-[130px] object-contain rounded-lg border border-slate-200 p-0.5 print:border-none"
+                      className="h-14 w-auto max-h-16 max-w-[130px] object-contain rounded-lg border border-slate-200 p-0.5"
                       crossOrigin="anonymous"
                     />
                   ) : (
-                    <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-900 text-white font-black text-xl print:bg-black">
+                    <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-900 text-white font-black text-xl">
                       {companyInitials}
                     </div>
                   )}
@@ -488,10 +493,10 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
 
                 <div>
                   {/* 1. Nama Perusahaan Diatas DIVISI PRODUKSI & PPIC GARMENT */}
-                  <div className="text-base sm:text-lg font-black tracking-wide text-blue-950 uppercase print:text-black">
+                  <div className="text-base sm:text-lg font-black tracking-wide text-blue-950 uppercase">
                     {modalCompanyName || 'PT. GARMENT PRESISI NUSANTARA'}
                   </div>
-                  <h1 className="text-xs sm:text-sm font-bold tracking-tight text-slate-700 uppercase print:text-black">
+                  <h1 className="text-xs sm:text-sm font-bold tracking-tight text-slate-700 uppercase">
                     DIVISI PRODUKSI & PPIC GARMENT
                   </h1>
                   <p className="text-[11px] text-slate-500">
@@ -501,7 +506,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
               </div>
 
               <div className="text-right text-xs text-slate-600 shrink-0">
-                <div className="inline-block rounded-md bg-slate-100 px-2.5 py-1 font-mono font-bold text-slate-800 border border-slate-200 print:border print:border-black">
+                <div className="inline-block rounded-md bg-slate-100 px-2.5 py-1 font-mono font-bold text-slate-800 border border-slate-200">
                   {calculation.calculationNumber}
                 </div>
                 <div className="mt-1 text-slate-600 font-medium">
@@ -514,7 +519,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
             </div>
 
             {/* Section: Judul Perhitungan & Sub-Judul Ringkasan Pesanan */}
-            <div className="my-5 rounded-xl bg-slate-50 p-4 border border-slate-200 print:border print:bg-transparent space-y-3">
+            <div className="my-5 rounded-xl bg-slate-50 p-4 border border-slate-200 space-y-3 print-avoid-break">
               {/* Judul Perhitungan (Requirement 4) */}
               <div className="border-b border-slate-200/80 pb-2.5">
                 <div className="text-slate-500 uppercase font-semibold text-[10px] tracking-wider">
@@ -539,7 +544,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                   <div className="text-slate-500 uppercase font-semibold text-[10px]">
                     Nama Buyer / Pemesan
                   </div>
-                  <div className="mt-1 text-sm sm:text-base font-bold text-blue-950 print:text-black">
+                  <div className="mt-1 text-sm sm:text-base font-bold text-blue-950">
                     {modalBuyerName || calculation.buyerName || '-'}
                   </div>
                 </div>
@@ -547,7 +552,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                   <div className="text-slate-500 uppercase font-semibold text-[10px]">
                     Jumlah Pesanan (Qty)
                   </div>
-                  <div className="mt-1 text-sm sm:text-base font-bold text-blue-900 print:text-black">
+                  <div className="mt-1 text-sm sm:text-base font-bold text-blue-900">
                     {calculation.orderQuantity.toLocaleString('id-ID')} Pcs
                   </div>
                 </div>
@@ -555,7 +560,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                   <div className="text-slate-500 uppercase font-semibold text-[10px]">
                     Status Dokumen
                   </div>
-                  <div className="mt-1 flex items-center gap-1.5 font-bold text-emerald-700 print:text-black">
+                  <div className="mt-1 flex items-center gap-1.5 font-bold text-emerald-700">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                     <span>Kalkulasi Siap Produksi</span>
                   </div>
@@ -564,13 +569,13 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
             </div>
 
             {/* Section 1: Ringkasan Pemakaian Bahan Baku */}
-            <div className="mb-6">
+            <div className="mb-6 print-avoid-break">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 pb-2 border-b border-slate-300 flex items-center justify-between">
                 <span>1. Rekapitulasi Pemakaian Bahan Baku (Ringkasan Pengambilan Gudang)</span>
               </h3>
               <table className="w-full mt-3 text-left border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-slate-300 bg-slate-100 print:bg-gray-100">
+                  <tr className="border-b border-slate-300 bg-slate-100">
                     <th className="py-2.5 px-3 font-bold text-slate-800">No</th>
                     <th className="py-2.5 px-3 font-bold text-slate-800">
                       Jenis & Spesifikasi Bahan Baku
@@ -578,7 +583,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                     <th className="py-2.5 px-3 font-bold text-slate-800 text-right">
                       Kebutuhan Riil (Desimal)
                     </th>
-                    <th className="py-2.5 px-3 font-bold text-slate-800 text-right bg-blue-50/60 print:bg-transparent">
+                    <th className="py-2.5 px-3 font-bold text-slate-800 text-right bg-blue-50/60">
                       Ambil Gudang (Dibulatkan)
                     </th>
                     <th className="py-2.5 px-3 font-bold text-slate-800">Satuan</th>
@@ -586,7 +591,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {calculation.summary.map((sum, index) => (
-                    <tr key={sum.rawMaterialId} className="hover:bg-slate-50/60">
+                    <tr key={sum.rawMaterialId} className="hover:bg-slate-50/60 print-avoid-break">
                       <td className="py-3 px-3 text-slate-500 font-mono">{index + 1}</td>
                       <td className="py-3 px-3">
                         <div className="font-bold text-slate-900">{sum.rawMaterialName}</div>
@@ -599,7 +604,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                       <td className="py-3 px-3 text-right font-mono font-bold text-slate-800 text-sm">
                         {sum.totalRequired.toFixed(2)}
                       </td>
-                      <td className="py-3 px-3 text-right font-mono font-black text-blue-950 text-base bg-blue-50/40 print:bg-transparent print:text-black">
+                      <td className="py-3 px-3 text-right font-mono font-black text-blue-950 text-base bg-blue-50/40">
                         {sum.roundedRequired}
                       </td>
                       <td className="py-3 px-3 font-semibold text-slate-700">{sum.unit}</td>
@@ -616,7 +621,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
               </h3>
               <table className="w-full mt-3 text-left border-collapse text-xs">
                 <thead>
-                  <tr className="border-b border-slate-300 bg-slate-100 print:bg-gray-100">
+                  <tr className="border-b border-slate-300 bg-slate-100">
                     <th className="py-2 px-2.5 font-bold text-slate-800">No</th>
                     <th className="py-2 px-2.5 font-bold text-slate-800">Accessories</th>
                     <th className="py-2 px-2.5 font-bold text-slate-800 text-center">Isi/Pcs</th>
@@ -632,7 +637,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {calculation.details.map((d, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/60">
+                    <tr key={idx} className="hover:bg-slate-50/60 print-avoid-break">
                       <td className="py-2.5 px-2.5 text-slate-500 font-mono">{idx + 1}</td>
                       <td className="py-2.5 px-2.5 font-semibold text-slate-900">
                         {d.accessoryName}
@@ -660,13 +665,13 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
 
             {/* Catatan / Keterangan */}
             {calculation.notes && (
-              <div className="mb-6 rounded-lg bg-amber-50/70 p-3 text-xs text-amber-900 border border-amber-200/60 print:border print:bg-transparent">
+              <div className="mb-6 rounded-lg bg-amber-50/70 p-3 text-xs text-amber-900 border border-amber-200/60 print-avoid-break">
                 <span className="font-bold">Catatan Khusus Produksi:</span> {calculation.notes}
               </div>
             )}
 
             {/* Section Tanda Tangan */}
-            <div className="mt-10 pt-6 border-t border-slate-300 grid grid-cols-3 gap-4 text-center text-xs">
+            <div className="mt-10 pt-6 border-t border-slate-300 grid grid-cols-3 gap-4 text-center text-xs print-avoid-break">
               <div>
                 <div className="text-slate-500">Dibuat Oleh (PPIC):</div>
                 <div className="h-16"></div>
@@ -690,7 +695,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
               </div>
             </div>
 
-            <div className="mt-8 text-center text-[10px] text-slate-400 border-t border-slate-100 pt-3">
+            <div className="mt-8 text-center text-[10px] text-slate-400 border-t border-slate-100 pt-3 print-avoid-break">
               Dicetak secara otomatis dari Sistem GarmentPro • Tanggal cetak:{' '}
               {new Date().toLocaleString('id-ID')}
             </div>
