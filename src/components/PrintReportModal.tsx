@@ -136,6 +136,12 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
         scrollX: 0,
         scrollY: 0,
         onclone: (clonedDoc) => {
+          // Remove any interactive or hidden UI elements from export
+          const nonPrintable = clonedDoc.querySelectorAll(
+            '[data-html2canvas-ignore], .print\\:hidden, label, input, button'
+          );
+          nonPrintable.forEach((el) => el.remove());
+
           // Ensure cloned images have crossOrigin set
           const imgs = clonedDoc.querySelectorAll('img');
           imgs.forEach((img) => {
@@ -216,6 +222,12 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
         scrollX: 0,
         scrollY: 0,
         onclone: (clonedDoc) => {
+          // Remove any interactive or hidden UI elements from export
+          const nonPrintable = clonedDoc.querySelectorAll(
+            '[data-html2canvas-ignore], .print\\:hidden, label, input, button'
+          );
+          nonPrintable.forEach((el) => el.remove());
+
           const imgs = clonedDoc.querySelectorAll('img');
           imgs.forEach((img) => {
             if (!img.crossOrigin) {
@@ -345,6 +357,28 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                 />
               </label>
 
+              {modalCompanyLogo && (
+                <button
+                  type="button"
+                  id="btn-reset-report-logo"
+                  onClick={() => {
+                    setModalCompanyLogo('');
+                    if (onUpdateCalculation) {
+                      onUpdateCalculation({
+                        ...calculation,
+                        companyLogo: '',
+                      });
+                    }
+                    setExportNotice('Logo kustom dihapus, kembali ke inisial standar');
+                    setTimeout(() => setExportNotice(null), 3000);
+                  }}
+                  className="rounded-xl bg-slate-800 hover:bg-rose-950/40 hover:text-rose-300 px-2.5 py-2 text-xs font-medium text-slate-300 border border-slate-700 transition"
+                  title="Kembalikan ke inisial standar"
+                >
+                  Reset Logo
+                </button>
+              )}
+
               {/* Download PDF (A4) */}
               <button
                 id="btn-download-pdf-a4"
@@ -436,8 +470,8 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
             {/* Header Surat */}
             <div className="flex items-start justify-between border-b-2 border-slate-900 pb-5">
               <div className="flex items-center gap-3.5">
-                {/* Logo Perusahaan (Bisa diganti) */}
-                <div className="relative group shrink-0">
+                {/* Logo Perusahaan */}
+                <div className="shrink-0">
                   {modalCompanyLogo ? (
                     <img
                       src={modalCompanyLogo}
@@ -450,22 +484,6 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                       {companyInitials}
                     </div>
                   )}
-
-                  {/* Hover button to quickly change logo on the paper directly */}
-                  <label
-                    htmlFor="upload-report-logo-badge"
-                    className="print:hidden absolute -bottom-1 -right-1 bg-slate-800 hover:bg-blue-600 text-white p-1 rounded-full cursor-pointer shadow-md opacity-80 hover:opacity-100 transition"
-                    title="Ganti Logo Dokumen"
-                  >
-                    <Upload className="w-3 h-3" />
-                    <input
-                      id="upload-report-logo-badge"
-                      type="file"
-                      accept="image/*"
-                      onChange={handleLogoUpload}
-                      className="hidden"
-                    />
-                  </label>
                 </div>
 
                 <div>
