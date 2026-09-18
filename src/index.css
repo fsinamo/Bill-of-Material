@@ -1,1 +1,111 @@
 @import "tailwindcss";
+
+@theme {
+  --color-blue-50: var(--app-theme-50);
+  --color-blue-100: var(--app-theme-100);
+  --color-blue-200: var(--app-theme-200);
+  --color-blue-300: var(--app-theme-300);
+  --color-blue-400: var(--app-theme-400);
+  --color-blue-500: var(--app-theme-500);
+  --color-blue-600: var(--app-theme-600);
+  --color-blue-700: var(--app-theme-700);
+  --color-blue-800: var(--app-theme-800);
+  --color-blue-900: var(--app-theme-900);
+  --color-blue-950: var(--app-theme-950);
+}
+
+/* 1. HIJAU ARMY (Tactical Olive / Kopelriem Military) - DEFAULT */
+:root,
+[data-app-theme="army-green"] {
+  --app-theme-50: #f3f7f1;
+  --app-theme-100: #e2ede0;
+  --app-theme-200: #c6dbc2;
+  --app-theme-300: #a4c49d;
+  --app-theme-400: #7fa776;
+  --app-theme-500: #5e8954;
+  --app-theme-600: #496f3f;
+  --app-theme-700: #3a5732;
+  --app-theme-800: #2d4427;
+  --app-theme-900: #21331c;
+  --app-theme-950: #121d10;
+
+  --app-header-bg: #1a2717;
+  --app-header-border: #2c3f27;
+  --app-canvas-bg: #f4f7f2;
+}
+
+/* 2. KOMANDO RIMBA (Deep Forest Camo) */
+[data-app-theme="camo-forest"] {
+  --app-theme-50: #eef6f2;
+  --app-theme-100: #d6ebdf;
+  --app-theme-200: #b2d7c4;
+  --app-theme-300: #85bea3;
+  --app-theme-400: #549f7e;
+  --app-theme-500: #398263;
+  --app-theme-600: #2b674e;
+  --app-theme-700: #24523f;
+  --app-theme-800: #1f4233;
+  --app-theme-900: #1b372c;
+  --app-theme-950: #0d1e17;
+
+  --app-header-bg: #122119;
+  --app-header-border: #1f372a;
+  --app-canvas-bg: #f0f5f2;
+}
+
+/* 3. KHAKI GURUN / SAFARI (Desert Tactical Tan) */
+[data-app-theme="desert-khaki"] {
+  --app-theme-50: #fbf7f0;
+  --app-theme-100: #f3ebda;
+  --app-theme-200: #e7d6b6;
+  --app-theme-300: #d6bb8c;
+  --app-theme-400: #c29d63;
+  --app-theme-500: #a98144;
+  --app-theme-600: #8e6834;
+  --app-theme-700: #714f29;
+  --app-theme-800: #5d4124;
+  --app-theme-900: #4e3620;
+  --app-theme-950: #2c1d0f;
+
+  --app-header-bg: #261e14;
+  --app-header-border: #3d3222;
+  --app-canvas-bg: #f9f6f0;
+}
+
+/* 4. HITAM TAKTIS / STEALTH (Night Ops Slate) */
+[data-app-theme="stealth-black"] {
+  --app-theme-50: #f8fafc;
+  --app-theme-100: #f1f5f9;
+  --app-theme-200: #e2e8f0;
+  --app-theme-300: #cbd5e1;
+  --app-theme-400: #94a3b8;
+  --app-theme-500: #64748b;
+  --app-theme-600: #475569;
+  --app-theme-700: #334155;
+  --app-theme-800: #1e293b;
+  --app-theme-900: #0f172a;
+  --app-theme-950: #020617;
+
+  --app-header-bg: #0b0f17;
+  --app-header-border: #1e293b;
+  --app-canvas-bg: #f1f5f9;
+}
+
+/* 5. BIRU PRESISI (Classic Garment Navy) */
+[data-app-theme="navy-blue"] {
+  --app-theme-50: #eff6ff;
+  --app-theme-100: #dbeafe;
+  --app-theme-200: #bfdbfe;
+  --app-theme-300: #93c5fd;
+  --app-theme-400: #60a5fa;
+  --app-theme-500: #3b82f6;
+  --app-theme-600: #2563eb;
+  --app-theme-700: #1d4ed8;
+  --app-theme-800: #1e40af;
+  --app-theme-900: #1e3a8a;
+  --app-theme-950: #172554;
+
+  --app-header-bg: #0f172a;
+  --app-header-border: #1e293b;
+  --app-canvas-bg: #f1f5f9;
+}

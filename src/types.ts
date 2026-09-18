@@ -105,3 +105,21 @@ export interface SyncLog {
   status: 'success' | 'error';
   message: string;
 }
+
+export type AppThemeId =
+  | 'army-green'
+  | 'camo-forest'
+  | 'desert-khaki'
+  | 'stealth-black'
+  | 'navy-blue';
+
+export interface AppThemeConfig {
+  id: AppThemeId;
+  name: string;
+  tagline: string;
+  primaryColor: string;
+  badgeBg: string;
+  headerBg: string;
+  accentText: string;
+  militaryTone: string;
+}

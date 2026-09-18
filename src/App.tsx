@@ -9,9 +9,12 @@ import {
   RawMaterial,
   Accessory,
   CalculationRecord,
-  GoogleSheetsConfig
+  GoogleSheetsConfig,
+  AppThemeId
 } from './types';
 import { storageService } from './services/storageService';
+import { THEME_OPTIONS, applyThemeToDocument, DEFAULT_THEME_ID } from './data/themes';
+import { ThemeSelectorModal } from './components/ThemeSelectorModal';
 import { ConsumptionCalculator } from './components/ConsumptionCalculator';
 import { SavedCalculationsView } from './components/SavedCalculationsView';
 import { MasterProductsView } from './components/MasterProductsView';
@@ -34,7 +37,8 @@ import {
   WifiOff,
   CloudCheck,
   RotateCw,
-  Factory
+  Factory,
+  Palette
 } from 'lucide-react';
 
 export default function App() {
@@ -48,11 +52,28 @@ export default function App() {
   const [calculations, setCalculations] = useState<CalculationRecord[]>([]);
   const [sheetsConfig, setSheetsConfig] = useState<GoogleSheetsConfig>(storageService.getSheetsConfig());
 
+  // Theme state (Default: Hijau Army)
+  const [currentTheme, setCurrentTheme] = useState<AppThemeId>(() => storageService.getTheme());
+  const [isThemeModalOpen, setIsThemeModalOpen] = useState<boolean>(false);
+
   // Active calculation loaded in the calculator
   const [activeCalculation, setActiveCalculation] = useState<CalculationRecord | null>(null);
 
   // Modal print calculation
   const [calculationToPrint, setCalculationToPrint] = useState<CalculationRecord | null>(null);
+
+  // Apply theme on load and change
+  useEffect(() => {
+    applyThemeToDocument(currentTheme);
+  }, [currentTheme]);
+
+  const handleSelectTheme = (themeId: AppThemeId) => {
+    setCurrentTheme(themeId);
+    storageService.saveTheme(themeId);
+    applyThemeToDocument(themeId);
+  };
+
+  const activeThemeConfig = THEME_OPTIONS.find((t) => t.id === currentTheme) || THEME_OPTIONS[0];
 
   // Load initial data from localStorage
   const loadAllData = () => {
@@ -194,7 +215,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
+    <div className="min-h-screen bg-[var(--app-canvas-bg,#f4f7f2)] flex flex-col font-sans transition-colors duration-200">
       {/* Offline Alert Strip */}
       {!isOnline && (
         <div className="bg-amber-600 px-4 py-1.5 text-center text-xs font-semibold text-white flex items-center justify-center gap-2">
@@ -204,7 +225,7 @@ export default function App() {
       )}
 
       {/* Main App Bar */}
-      <header className="sticky top-0 z-40 bg-slate-900 text-white border-b border-slate-800 shadow-sm print:hidden">
+      <header className="sticky top-0 z-40 bg-[var(--app-header-bg,#1a2717)] text-white border-b border-[var(--app-header-border,#2c3f27)] shadow-sm print:hidden transition-colors duration-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
           <div className="flex items-center justify-between gap-4">
             {/* Logo and Brand */}
@@ -219,28 +240,46 @@ export default function App() {
                     BOM Engine
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-400">
+                <p className="text-[11px] text-slate-300/80">
                   Modul Konsumsi Bahan Baku & Integrasi Google Sheets
                 </p>
               </div>
             </div>
 
-            {/* Quick Badges & PWA Install */}
-            <div className="flex items-center gap-3">
-              <div className="hidden sm:flex items-center gap-2 text-xs text-slate-300">
-                <span className="flex items-center gap-1 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700">
+            {/* Quick Badges, Theme Selector & PWA Install */}
+            <div className="flex items-center gap-2.5">
+              <div className="hidden lg:flex items-center gap-2 text-xs text-slate-300">
+                <span className="flex items-center gap-1 bg-black/20 px-2.5 py-1 rounded-lg border border-white/10">
                   <Package className="w-3.5 h-3.5 text-blue-400" />
                   <span>{products.length} Produk</span>
                 </span>
-                <span className="flex items-center gap-1 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700">
+                <span className="flex items-center gap-1 bg-black/20 px-2.5 py-1 rounded-lg border border-white/10">
                   <Layers className="w-3.5 h-3.5 text-amber-400" />
                   <span>{rawMaterials.length} Bahan Baku</span>
                 </span>
-                <span className="flex items-center gap-1 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700">
+                <span className="flex items-center gap-1 bg-black/20 px-2.5 py-1 rounded-lg border border-white/10">
                   <FileText className="w-3.5 h-3.5 text-emerald-400" />
                   <span>{calculations.length} Tersimpan</span>
                 </span>
               </div>
+
+              {/* Theme Selector Button */}
+              <button
+                id="btn-open-theme-modal"
+                type="button"
+                onClick={() => setIsThemeModalOpen(true)}
+                className="flex items-center gap-2 bg-black/25 hover:bg-black/40 px-3 py-1.5 rounded-xl border border-white/15 text-xs font-semibold text-white transition shadow-xs group"
+                title="Pilihan Tema Aplikasi"
+              >
+                <span
+                  className="h-3.5 w-3.5 rounded-full border-2 border-white/80 shadow-xs shrink-0 transition group-hover:scale-110"
+                  style={{ backgroundColor: activeThemeConfig.primaryColor }}
+                />
+                <Palette className="w-3.5 h-3.5 text-white/80 group-hover:text-white" />
+                <span className="hidden sm:inline">
+                  {activeThemeConfig.name.split(' (')[0]}
+                </span>
+              </button>
 
               <PWAInstallButton />
             </div>
@@ -254,7 +293,7 @@ export default function App() {
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
                 activeTab === 'calculator'
                   ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  : 'text-slate-300 hover:text-white hover:bg-white/10'
               }`}
             >
               <Scissors className="w-3.5 h-3.5" />
@@ -267,13 +306,13 @@ export default function App() {
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
                 activeTab === 'saved'
                   ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  : 'text-slate-300 hover:text-white hover:bg-white/10'
               }`}
             >
               <FileText className="w-3.5 h-3.5" />
               <span>Riwayat Perhitungan</span>
               {calculations.length > 0 && (
-                <span className="ml-1 rounded-full bg-slate-700 px-1.5 py-0.2 text-[10px] text-slate-200">
+                <span className="ml-1 rounded-full bg-black/30 px-1.5 py-0.2 text-[10px] text-slate-200">
                   {calculations.length}
                 </span>
               )}
@@ -285,7 +324,7 @@ export default function App() {
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
                 activeTab === 'products'
                   ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  : 'text-slate-300 hover:text-white hover:bg-white/10'
               }`}
             >
               <Package className="w-3.5 h-3.5" />
@@ -298,7 +337,7 @@ export default function App() {
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
                 activeTab === 'materials'
                   ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  : 'text-slate-300 hover:text-white hover:bg-white/10'
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
@@ -311,7 +350,7 @@ export default function App() {
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
                 activeTab === 'accessories'
                   ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  : 'text-slate-300 hover:text-white hover:bg-white/10'
               }`}
             >
               <Sparkles className="w-3.5 h-3.5" />
@@ -323,8 +362,8 @@ export default function App() {
               onClick={() => setActiveTab('sheets')}
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
                 activeTab === 'sheets'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-emerald-400 hover:text-emerald-300 hover:bg-slate-800'
+                  ? 'bg-emerald-700 text-white shadow-xs'
+                  : 'text-emerald-300 hover:text-white hover:bg-white/10'
               }`}
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -340,7 +379,7 @@ export default function App() {
               className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
                 activeTab === 'modular'
                   ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                  : 'text-slate-300 hover:text-white hover:bg-white/10'
               }`}
             >
               <Boxes className="w-3.5 h-3.5" />
@@ -432,6 +471,15 @@ export default function App() {
             setCalculationToPrint(null);
             setActiveTab('calculator');
           }}
+        />
+      )}
+
+      {/* Theme Selector Modal */}
+      {isThemeModalOpen && (
+        <ThemeSelectorModal
+          currentTheme={currentTheme}
+          onSelectTheme={handleSelectTheme}
+          onClose={() => setIsThemeModalOpen(false)}
         />
       )}
 

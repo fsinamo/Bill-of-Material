@@ -1,5 +1,6 @@
-import { Product, RawMaterial, Accessory, CalculationRecord, GoogleSheetsConfig, SyncLog } from '../types';
+import { Product, RawMaterial, Accessory, CalculationRecord, GoogleSheetsConfig, SyncLog, AppThemeId } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_RAW_MATERIALS, INITIAL_ACCESSORIES, INITIAL_CALCULATIONS } from '../data/defaultData';
+import { DEFAULT_THEME_ID } from '../data/themes';
 
 const KEYS = {
   PRODUCTS: 'garment_master_products_v1',
@@ -9,6 +10,7 @@ const KEYS = {
   SHEETS_CONFIG: 'garment_sheets_config_v1',
   SYNC_LOGS: 'garment_sync_logs_v1',
   COMPANY_PROFILE: 'garment_company_profile_v1',
+  THEME: 'garment_app_theme_v1',
 };
 
 export interface CompanyProfile {
@@ -18,6 +20,19 @@ export interface CompanyProfile {
 }
 
 export const storageService = {
+  // Theme Settings
+  getTheme(): AppThemeId {
+    const raw = localStorage.getItem(KEYS.THEME) as AppThemeId | null;
+    if (raw && ['army-green', 'camo-forest', 'desert-khaki', 'stealth-black', 'navy-blue'].includes(raw)) {
+      return raw;
+    }
+    return DEFAULT_THEME_ID;
+  },
+
+  saveTheme(theme: AppThemeId): void {
+    localStorage.setItem(KEYS.THEME, theme);
+  },
+
   // Company Profile Settings
   getCompanyProfile(): CompanyProfile {
     const raw = localStorage.getItem(KEYS.COMPANY_PROFILE);

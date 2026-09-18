@@ -385,7 +385,7 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
   return (
     <div className="space-y-6">
       {/* Top Banner / Preset Helper */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-blue-900 to-indigo-900 text-white p-5 shadow-sm">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-blue-900 to-blue-950 border border-blue-800/60 text-white p-5 shadow-sm">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
             <span className="rounded bg-blue-700/80 px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase text-blue-100">
