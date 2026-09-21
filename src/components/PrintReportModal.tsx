@@ -265,7 +265,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
     let csvContent = 'data:text/csv;charset=utf-8,';
     csvContent += `LAPORAN KEBUTUHAN KONSUMSI BAHAN BAKU\n`;
     csvContent += `Nama Perusahaan,${modalCompanyName || 'PT. GARMENT PRESISI NUSANTARA'}\n`;
-    csvContent += `Divisi,DIVISI PRODUKSI & PPIC GARMENT\n`;
+    csvContent += `Divisi,DIVISI KOPELRIEM\n`;
     csvContent += `Judul Perhitungan,${calculation.title || calculation.productName}\n`;
     csvContent += `No Dokumen,${calculation.calculationNumber}\n`;
     csvContent += `Nama Produk,${calculation.productName}\n`;
@@ -492,12 +492,12 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                 </div>
 
                 <div>
-                  {/* 1. Nama Perusahaan Diatas DIVISI PRODUKSI & PPIC GARMENT */}
+                  {/* 1. Nama Perusahaan Diatas DIVISI KOPELRIEM */}
                   <div className="text-base sm:text-lg font-black tracking-wide text-blue-950 uppercase">
                     {modalCompanyName || 'PT. GARMENT PRESISI NUSANTARA'}
                   </div>
                   <h1 className="text-xs sm:text-sm font-bold tracking-tight text-slate-700 uppercase">
-                    DIVISI PRODUKSI & PPIC GARMENT
+                    DIVISI KOPELRIEM
                   </h1>
                   <p className="text-[11px] text-slate-500">
                     Sistem Informasi Kebutuhan Konsumsi Bahan Baku (Bill of Materials)

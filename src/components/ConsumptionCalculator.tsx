@@ -491,7 +491,7 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
 
         {/* 1. Nama Perusahaan, 2. Logo Perusahaan, 3. Nama Buyer */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 pt-2 border-t border-slate-100 text-xs">
-          {/* 1. Nama Perusahaan Diatas DIVISI PRODUKSI & PPIC GARMENT */}
+          {/* 1. Nama Perusahaan Diatas DIVISI KOPELRIEM */}
           <div className="md:col-span-5 space-y-1">
             <label className="block font-semibold text-slate-700">
               Nama Perusahaan (Kop Laporan) <span className="text-rose-500">*</span>
@@ -508,7 +508,7 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
               />
             </div>
             <p className="text-[10px] text-slate-400">
-              Ditampilkan <strong>di atas</strong> teks "DIVISI PRODUKSI & PPIC GARMENT" pada laporan
+              Ditampilkan <strong>di atas</strong> teks "DIVISI KOPELRIEM" pada laporan
             </p>
           </div>
 
