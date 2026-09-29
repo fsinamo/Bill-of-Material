@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { CalculationRecord } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { CalculationRecord, ConsumptionDetail } from '../types';
 import {
   Printer,
-  Download,
   X,
   CheckCircle2,
   Factory,
@@ -13,8 +12,6 @@ import {
   Loader2,
   FileSpreadsheet,
   Upload,
-  Building2,
-  User,
   ChevronDown
 } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -26,6 +23,125 @@ interface PrintReportModalProps {
   onReturnHome?: () => void;
   onUpdateCalculation?: (calc: CalculationRecord) => void;
 }
+
+interface ReportPageConfig {
+  pageNumber: number;
+  totalPages: number;
+  isFirstPage: boolean;
+  isLastPage: boolean;
+  details: ConsumptionDetail[];
+  detailStartIndex: number;
+  showNotes: boolean;
+  showSignatures: boolean;
+}
+
+// Partition data into distinct A4 sheets so zero data is ever cut off between pages
+const buildReportPages = (calculation: CalculationRecord): ReportPageConfig[] => {
+  const summaryCount = calculation.summary?.length || 0;
+  const details = calculation.details || [];
+  const totalDetails = details.length;
+
+  // Single-page height budget in standard A4 (1040px usable):
+  // Letterhead(85) + OrderInfo(105) + SummaryTable(55 + summaryCount*38) + DetailsThead(35) + Signatures(135) + Notes(45) + Footer(25)
+  const singlePageBaseHeight =
+    85 + 105 + 55 + summaryCount * 38 + 35 + 135 + (calculation.notes ? 45 : 0) + 25;
+  const singlePageDetailsSpace = 1040 - singlePageBaseHeight;
+  const singlePageMaxDetails = Math.max(0, Math.floor(singlePageDetailsSpace / 36));
+
+  // If all details fit within a single page with comfortable margins
+  if (totalDetails <= singlePageMaxDetails && totalDetails <= 8) {
+    return [
+      {
+        pageNumber: 1,
+        totalPages: 1,
+        isFirstPage: true,
+        isLastPage: true,
+        details: details,
+        detailStartIndex: 0,
+        showNotes: true,
+        showSignatures: true,
+      },
+    ];
+  }
+
+  // Multi-page layout
+  // Page 1 budget: Letterhead(85) + OrderInfo(105) + SummaryTable(55 + summaryCount*38) + DetailsThead(35) + ContinuationNotice(35) + Footer(25)
+  const page1BaseHeight = 85 + 105 + 55 + summaryCount * 38 + 35 + 35 + 25;
+  const page1AvailableForDetails = 1040 - page1BaseHeight;
+  // Limit Page 1 to between 5 and 10 rows to maintain clean aesthetics
+  const page1MaxDetails = Math.min(
+    10,
+    Math.max(4, Math.floor(page1AvailableForDetails / 36))
+  );
+
+  // Subsequent pages budget:
+  // Continuation page WITH signatures: 1040 - ContinuationHeader(65) - DetailsThead(35) - Signatures(135) - Notes(45) - Footer(25) = 735px => ~20 rows
+  const pageWithSignaturesMaxDetails = Math.floor(730 / 36);
+  // Continuation page WITHOUT signatures: 1040 - ContinuationHeader(65) - DetailsThead(35) - ContinuationNotice(35) - Footer(25) = 880px => ~24 rows
+  const fullContinuationMaxDetails = Math.floor(880 / 36);
+
+  const pages: ReportPageConfig[] = [];
+  let remainingDetails = [...details];
+  let currentDetailStartIndex = 0;
+  let pageNumber = 1;
+
+  // Page 1:
+  const page1Details = remainingDetails.slice(0, page1MaxDetails);
+  remainingDetails = remainingDetails.slice(page1MaxDetails);
+
+  pages.push({
+    pageNumber: 1,
+    totalPages: 1,
+    isFirstPage: true,
+    isLastPage: remainingDetails.length === 0,
+    details: page1Details,
+    detailStartIndex: 0,
+    showNotes: remainingDetails.length === 0,
+    showSignatures: remainingDetails.length === 0,
+  });
+  currentDetailStartIndex += page1Details.length;
+  pageNumber++;
+
+  // Subsequent pages:
+  while (remainingDetails.length > 0) {
+    if (remainingDetails.length <= pageWithSignaturesMaxDetails) {
+      pages.push({
+        pageNumber: pageNumber,
+        totalPages: 0,
+        isFirstPage: false,
+        isLastPage: true,
+        details: remainingDetails,
+        detailStartIndex: currentDetailStartIndex,
+        showNotes: true,
+        showSignatures: true,
+      });
+      break;
+    } else {
+      const chunk = remainingDetails.slice(0, fullContinuationMaxDetails);
+      remainingDetails = remainingDetails.slice(fullContinuationMaxDetails);
+      pages.push({
+        pageNumber: pageNumber,
+        totalPages: 0,
+        isFirstPage: false,
+        isLastPage: remainingDetails.length === 0,
+        details: chunk,
+        detailStartIndex: currentDetailStartIndex,
+        showNotes: remainingDetails.length === 0,
+        showSignatures: remainingDetails.length === 0,
+      });
+      currentDetailStartIndex += chunk.length;
+      pageNumber++;
+    }
+  }
+
+  // Update totalPages
+  const total = pages.length;
+  pages.forEach((p) => {
+    p.totalPages = total;
+  });
+
+  return pages;
+};
 
 export const PrintReportModal: React.FC<PrintReportModalProps> = ({
   calculation,
@@ -39,7 +155,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [showJpgMenu, setShowJpgMenu] = useState(false);
 
-  // Editable / customizable header fields directly in report
+  // Editable header fields directly in report
   const [modalCompanyLogo, setModalCompanyLogo] = useState<string>(calculation.companyLogo || '');
   const [modalCompanyName, setModalCompanyName] = useState<string>(
     calculation.companyName || 'PT. GARMENT PRESISI NUSANTARA'
@@ -131,220 +247,72 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
     document.body.removeChild(link);
   };
 
-  // Helper to calculate distance from top of report container to any nested element
-  const getOffsetRelativeToReport = (el: HTMLElement, reportRoot: HTMLElement): number => {
-    let offset = 0;
-    let curr: HTMLElement | null = el;
-    while (curr && curr !== reportRoot) {
-      offset += curr.offsetTop;
-      curr = curr.offsetParent as HTMLElement | null;
-    }
-    return offset;
-  };
+  // Compute pages dynamically so no rows or text are ever cut off
+  const reportPages = useMemo(() => {
+    return buildReportPages(calculation);
+  }, [calculation]);
 
-  // High-precision report canvas capture with standardized desktop A4 dimensions
-  const captureReportCanvas = async () => {
-    const element = document.getElementById('printable-report');
-    if (!element) {
-      throw new Error('Element dokumen laporan tidak ditemukan');
+  // Capture a specific A4 page element with standardized desktop dimensions
+  const capturePageCanvas = async (pageNumber: number): Promise<HTMLCanvasElement> => {
+    const pageEl = document.getElementById(`printable-report-page-${pageNumber}`);
+    if (!pageEl) {
+      throw new Error(`Elemen dokumen halaman ${pageNumber} tidak ditemukan`);
     }
 
-    const scrollArea = document.getElementById('print-report-scroll-area');
-    const prevScrollTop = scrollArea ? scrollArea.scrollTop : 0;
-    if (scrollArea) {
-      scrollArea.scrollTop = 0;
-    }
-
-    try {
-      // Collect natural break positions from DOM (between table rows, sections, notes, signatures)
-      const breakNodes = element.querySelectorAll<HTMLElement>(
-        '.report-row, .report-section, .print-avoid-break'
-      );
-      const relativeBreakOffsets: number[] = [];
-      breakNodes.forEach((node) => {
-        const topOffset = getOffsetRelativeToReport(node, element);
-        if (topOffset > 0 && !relativeBreakOffsets.includes(topOffset)) {
-          relativeBreakOffsets.push(topOffset);
+    return await html2canvas(pageEl, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+      scrollX: 0,
+      scrollY: 0,
+      windowWidth: 1200,
+      onclone: (clonedDoc) => {
+        const clonedScroll = clonedDoc.getElementById('print-report-scroll-area');
+        if (clonedScroll) {
+          clonedScroll.style.overflow = 'visible';
+          clonedScroll.style.maxHeight = 'none';
+          clonedScroll.style.height = 'auto';
         }
-      });
-      relativeBreakOffsets.sort((a, b) => a - b);
-
-      // Render canvas at scale 2 for razor-sharp vector-like text & borders
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-        scrollX: 0,
-        scrollY: 0,
-        windowWidth: 1200,
-        onclone: (clonedDoc) => {
-          // Reset all parent containers so content is completely visible and never clipped
-          const clonedScroll = clonedDoc.getElementById('print-report-scroll-area');
-          if (clonedScroll) {
-            clonedScroll.style.overflow = 'visible';
-            clonedScroll.style.maxHeight = 'none';
-            clonedScroll.style.height = 'auto';
-            clonedScroll.style.padding = '0';
-            clonedScroll.style.background = '#ffffff';
-          }
-
-          const clonedDialog = clonedDoc.getElementById('print-report-modal-dialog');
-          if (clonedDialog) {
-            clonedDialog.style.overflow = 'visible';
-            clonedDialog.style.maxHeight = 'none';
-            clonedDialog.style.height = 'auto';
-            clonedDialog.style.border = 'none';
-            clonedDialog.style.boxShadow = 'none';
-          }
-
-          const clonedBackdrop = clonedDoc.getElementById('print-report-modal-backdrop');
-          if (clonedBackdrop) {
-            clonedBackdrop.style.overflow = 'visible';
-            clonedBackdrop.style.position = 'static';
-          }
-
-          // Lock report paper to exact standard A4 width in 96 DPI (794px)
-          const clonedReport = clonedDoc.getElementById('printable-report');
-          if (clonedReport) {
-            clonedReport.style.width = '794px';
-            clonedReport.style.maxWidth = '794px';
-            clonedReport.style.minWidth = '794px';
-            clonedReport.style.margin = '0 auto';
-            clonedReport.style.borderRadius = '0';
-            clonedReport.style.boxShadow = 'none';
-            clonedReport.style.border = 'none';
-            clonedReport.style.padding = '36px 40px';
-            clonedReport.style.backgroundColor = '#ffffff';
-            clonedReport.style.boxSizing = 'border-box';
-          }
-
-          // Remove toolbar buttons & interactive items from capture
-          const nonPrintable = clonedDoc.querySelectorAll(
-            '[data-html2canvas-ignore], .print\\:hidden, #btn-return-home-top, #btn-return-home-bottom'
-          );
-          nonPrintable.forEach((el) => el.remove());
-
-          // Ensure images are crossOrigin
-          const imgs = clonedDoc.querySelectorAll('img');
-          imgs.forEach((img) => {
-            if (!img.crossOrigin) {
-              img.crossOrigin = 'anonymous';
-            }
-          });
-        },
-      });
-
-      // Convert DOM break offsets to canvas pixel coordinates
-      const canvasScale = canvas.height / element.scrollHeight;
-      const canvasBreakPoints = relativeBreakOffsets.map((offset) =>
-        Math.round(offset * canvasScale)
-      );
-
-      return { canvas, canvasBreakPoints };
-    } finally {
-      if (scrollArea) {
-        scrollArea.scrollTop = prevScrollTop;
-      }
-    }
-  };
-
-  // Helper to slice a sub-canvas for a specific A4 page with pure white background
-  const slicePageCanvas = (
-    fullCanvas: HTMLCanvasElement,
-    startY: number,
-    sliceHeight: number
-  ): HTMLCanvasElement => {
-    const pageCanvas = document.createElement('canvas');
-    pageCanvas.width = fullCanvas.width;
-    pageCanvas.height = sliceHeight;
-    const ctx = pageCanvas.getContext('2d');
-    if (ctx) {
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-      ctx.drawImage(
-        fullCanvas,
-        0,
-        startY,
-        fullCanvas.width,
-        sliceHeight,
-        0,
-        0,
-        fullCanvas.width,
-        sliceHeight
-      );
-    }
-    return pageCanvas;
-  };
-
-  // Helper to compute smart page boundaries avoiding cutting across table rows
-  const computePages = (
-    canvasHeight: number,
-    maxPageCanvasHeight: number,
-    canvasBreakPoints: number[]
-  ) => {
-    const pages: { startY: number; endY: number; height: number }[] = [];
-    let currentY = 0;
-
-    while (currentY < canvasHeight) {
-      const remainingHeight = canvasHeight - currentY;
-      if (remainingHeight <= maxPageCanvasHeight) {
-        pages.push({
-          startY: currentY,
-          endY: canvasHeight,
-          height: remainingHeight,
+        const clonedDialog = clonedDoc.getElementById('print-report-modal-dialog');
+        if (clonedDialog) {
+          clonedDialog.style.overflow = 'visible';
+          clonedDialog.style.maxHeight = 'none';
+          clonedDialog.style.height = 'auto';
+        }
+        const clonedPage = clonedDoc.getElementById(`printable-report-page-${pageNumber}`);
+        if (clonedPage) {
+          clonedPage.style.width = '794px';
+          clonedPage.style.maxWidth = '794px';
+          clonedPage.style.minWidth = '794px';
+          clonedPage.style.margin = '0 auto';
+          clonedPage.style.borderRadius = '0';
+          clonedPage.style.boxShadow = 'none';
+          clonedPage.style.border = 'none';
+          clonedPage.style.padding = '32px 36px';
+          clonedPage.style.backgroundColor = '#ffffff';
+          clonedPage.style.boxSizing = 'border-box';
+        }
+        const nonPrintable = clonedDoc.querySelectorAll(
+          '[data-html2canvas-ignore], .print\\:hidden'
+        );
+        nonPrintable.forEach((el) => el.remove());
+        const imgs = clonedDoc.querySelectorAll('img');
+        imgs.forEach((img) => {
+          if (!img.crossOrigin) img.crossOrigin = 'anonymous';
         });
-        break;
-      }
-
-      const maxCutY = currentY + maxPageCanvasHeight;
-      // Do not cut earlier than 60% of the page height unless necessary
-      const minCutY = currentY + Math.floor(maxPageCanvasHeight * 0.60);
-
-      let chosenCutY = maxCutY;
-      let bestCandidate = -1;
-
-      for (const bp of canvasBreakPoints) {
-        if (bp <= maxCutY && bp >= minCutY) {
-          if (bp > bestCandidate) {
-            bestCandidate = bp;
-          }
-        }
-      }
-
-      if (bestCandidate > 0) {
-        chosenCutY = bestCandidate;
-      }
-
-      pages.push({
-        startY: currentY,
-        endY: chosenCutY,
-        height: chosenCutY - currentY,
-      });
-
-      currentY = chosenCutY;
-    }
-
-    return pages;
+      },
+    });
   };
 
-  // Export as multi-page A4 PDF without truncation or splitting rows
+  // Export as multi-page A4 PDF without any data truncation between pages
   const handleDownloadPdfA4 = async () => {
     setIsExportingPdf(true);
-    setExportNotice('Menyiapkan file PDF ukuran A4 (bebas terpotong)...');
+    setExportNotice('Menyiapkan file PDF format A4 (bebas terpotong)...');
     try {
-      const { canvas, canvasBreakPoints } = await captureReportCanvas();
-
-      // Standard A4 dimensions in mm: 210mm x 297mm
-      // Margins: 10mm left/right, 12mm top/bottom
-      const contentWidthMm = 190;
-      const marginX = 10;
-      const marginY = 12;
-      const pxPerMm = canvas.width / contentWidthMm;
-      // Usable height = 297 - 24 = 273mm
-      const maxPageCanvasHeight = Math.floor(273 * pxPerMm);
-
-      const pages = computePages(canvas.height, maxPageCanvasHeight, canvasBreakPoints);
+      const scrollArea = document.getElementById('print-report-scroll-area');
+      const prevScrollTop = scrollArea ? scrollArea.scrollTop : 0;
+      if (scrollArea) scrollArea.scrollTop = 0;
 
       const pdf = new jsPDF({
         orientation: 'portrait',
@@ -352,43 +320,31 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
         format: 'a4',
       });
 
-      pages.forEach((page, index) => {
-        if (index > 0) {
+      for (let i = 0; i < reportPages.length; i++) {
+        const pageNum = reportPages[i].pageNumber;
+        const canvas = await capturePageCanvas(pageNum);
+
+        if (i > 0) {
           pdf.addPage();
         }
 
-        const pageCanvas = slicePageCanvas(canvas, page.startY, page.height);
-        const pageImgData = pageCanvas.toDataURL('image/jpeg', 0.98);
-        const pageHeightMm = (page.height / canvas.width) * contentWidthMm;
+        // Standard A4: 210 x 297 mm
+        // 794px x 1123px at 96 DPI has the exact 210/297 aspect ratio
+        const imgData = canvas.toDataURL('image/jpeg', 0.98);
+        pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+      }
 
-        pdf.addImage(pageImgData, 'JPEG', marginX, marginY, contentWidthMm, pageHeightMm);
-
-        // Professional page numbering in footer
-        if (pages.length > 1) {
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(8);
-          pdf.setTextColor(130, 130, 130);
-          pdf.text(
-            `Halaman ${index + 1} dari ${pages.length}  •  ${calculation.calculationNumber} - ${calculation.productName}`,
-            105,
-            290,
-            { align: 'center' }
-          );
-        }
-      });
+      if (scrollArea) scrollArea.scrollTop = prevScrollTop;
 
       const safeNumber = calculation.calculationNumber.replace(/[^a-zA-Z0-9-_]/g, '_');
       const safeProduct = calculation.productName.replace(/[^a-zA-Z0-9-_]/g, '_');
       const fileName = `Laporan_BOM_${safeNumber}_${safeProduct}.pdf`;
-
       pdf.save(fileName);
-      setExportNotice(
-        `Berhasil mengunduh PDF A4 (${pages.length} Halaman): ${fileName}`
-      );
+      setExportNotice(`Berhasil mengunduh PDF A4 (${reportPages.length} Halaman): ${fileName}`);
       setTimeout(() => setExportNotice(null), 4000);
     } catch (err) {
       console.error('Gagal generate PDF A4:', err);
-      setExportNotice('Gagal membuat PDF. Anda juga dapat menggunakan tombol Cetak Printer.');
+      setExportNotice('Gagal membuat PDF. Coba kembali beberapa saat.');
       setTimeout(() => setExportNotice(null), 4000);
     } finally {
       setIsExportingPdf(false);
@@ -399,47 +355,60 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
   const handleDownloadJpg = async (mode: 'a4_pages' | 'full' = 'a4_pages') => {
     setIsExportingJpg(true);
     setShowJpgMenu(false);
-    setExportNotice('Menyiapkan gambar JPG kualitas tinggi (persis seperti PDF)...');
+    setExportNotice('Menyiapkan file JPG kualitas tinggi (sama persis dengan PDF)...');
     try {
-      const { canvas, canvasBreakPoints } = await captureReportCanvas();
-      const contentWidthMm = 190;
-      const pxPerMm = canvas.width / contentWidthMm;
-      const maxPageCanvasHeight = Math.floor(273 * pxPerMm);
-      const pages = computePages(canvas.height, maxPageCanvasHeight, canvasBreakPoints);
+      const scrollArea = document.getElementById('print-report-scroll-area');
+      const prevScrollTop = scrollArea ? scrollArea.scrollTop : 0;
+      if (scrollArea) scrollArea.scrollTop = 0;
+
+      const canvases: HTMLCanvasElement[] = [];
+
+      for (let i = 0; i < reportPages.length; i++) {
+        const pageNum = reportPages[i].pageNumber;
+        const canvas = await capturePageCanvas(pageNum);
+        canvases.push(canvas);
+      }
+
+      if (scrollArea) scrollArea.scrollTop = prevScrollTop;
 
       const safeNumber = calculation.calculationNumber.replace(/[^a-zA-Z0-9-_]/g, '_');
       const safeProduct = calculation.productName.replace(/[^a-zA-Z0-9-_]/g, '_');
 
-      if (mode === 'full' || pages.length === 1) {
-        // Single continuous high-resolution JPG image with pure white background
-        const fullJpgCanvas = document.createElement('canvas');
-        fullJpgCanvas.width = canvas.width;
-        fullJpgCanvas.height = canvas.height;
-        const ctx = fullJpgCanvas.getContext('2d');
+      if (mode === 'full' && canvases.length > 1) {
+        // Stack all pages into one continuous high-res JPG
+        const totalHeight = canvases.reduce((acc, c) => acc + c.height, 0);
+        const fullCanvas = document.createElement('canvas');
+        fullCanvas.width = canvases[0].width;
+        fullCanvas.height = totalHeight;
+        const ctx = fullCanvas.getContext('2d');
         if (ctx) {
           ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, fullJpgCanvas.width, fullJpgCanvas.height);
-          ctx.drawImage(canvas, 0, 0);
+          ctx.fillRect(0, 0, fullCanvas.width, fullCanvas.height);
+          let currentY = 0;
+          canvases.forEach((c) => {
+            ctx.drawImage(c, 0, currentY);
+            currentY += c.height;
+          });
         }
-        const dataUrl = fullJpgCanvas.toDataURL('image/jpeg', 0.95);
-        const fileName =
-          pages.length === 1
-            ? `Laporan_BOM_${safeNumber}_${safeProduct}.jpg`
-            : `Laporan_BOM_${safeNumber}_${safeProduct}_FULL.jpg`;
-        triggerDownload(dataUrl, fileName);
-        setExportNotice(`Berhasil mengunduh JPG: ${fileName}`);
+        const dataUrl = fullCanvas.toDataURL('image/jpeg', 0.95);
+        triggerDownload(dataUrl, `Laporan_BOM_${safeNumber}_${safeProduct}_FULL.jpg`);
+        setExportNotice(`Berhasil mengunduh JPG Full: Laporan_BOM_${safeNumber}_FULL.jpg`);
       } else {
-        // Multi-page: download each A4 page matching PDF pages 1:1!
-        pages.forEach((page, index) => {
-          const pageCanvas = slicePageCanvas(canvas, page.startY, page.height);
-          const dataUrl = pageCanvas.toDataURL('image/jpeg', 0.95);
-          const fileName = `Laporan_BOM_${safeNumber}_${safeProduct}_Hal_${index + 1}.jpg`;
+        // Download each A4 page matching PDF 1:1
+        canvases.forEach((c, idx) => {
+          const dataUrl = c.toDataURL('image/jpeg', 0.95);
+          const fileName =
+            canvases.length === 1
+              ? `Laporan_BOM_${safeNumber}_${safeProduct}.jpg`
+              : `Laporan_BOM_${safeNumber}_${safeProduct}_Hal_${idx + 1}.jpg`;
           setTimeout(() => {
             triggerDownload(dataUrl, fileName);
-          }, index * 400);
+          }, idx * 400);
         });
         setExportNotice(
-          `Berhasil mengunduh ${pages.length} lembar JPG format A4 (sama persis dengan PDF)!`
+          canvases.length === 1
+            ? `Berhasil mengunduh JPG format A4`
+            : `Berhasil mengunduh ${canvases.length} lembar JPG format A4 (sama persis dengan PDF)!`
         );
       }
       setTimeout(() => setExportNotice(null), 4500);
@@ -457,23 +426,22 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
     setIsExportingPng(true);
     setExportNotice('Menyiapkan gambar PNG dokumen...');
     try {
-      const { canvas } = await captureReportCanvas();
-      const pngCanvas = document.createElement('canvas');
-      pngCanvas.width = canvas.width;
-      pngCanvas.height = canvas.height;
-      const ctx = pngCanvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, pngCanvas.width, pngCanvas.height);
-        ctx.drawImage(canvas, 0, 0);
-      }
-      const dataUrl = pngCanvas.toDataURL('image/png');
-      const safeNumber = calculation.calculationNumber.replace(/[^a-zA-Z0-9-_]/g, '_');
-      const safeProduct = calculation.productName.replace(/[^a-zA-Z0-9-_]/g, '_');
-      const fileName = `Laporan_BOM_${safeNumber}_${safeProduct}.png`;
+      for (let i = 0; i < reportPages.length; i++) {
+        const pageNum = reportPages[i].pageNumber;
+        const canvas = await capturePageCanvas(pageNum);
+        const dataUrl = canvas.toDataURL('image/png');
+        const safeNumber = calculation.calculationNumber.replace(/[^a-zA-Z0-9-_]/g, '_');
+        const safeProduct = calculation.productName.replace(/[^a-zA-Z0-9-_]/g, '_');
+        const fileName =
+          reportPages.length === 1
+            ? `Laporan_BOM_${safeNumber}_${safeProduct}.png`
+            : `Laporan_BOM_${safeNumber}_${safeProduct}_Hal_${i + 1}.png`;
 
-      triggerDownload(dataUrl, fileName);
-      setExportNotice(`Berhasil mengunduh PNG: ${fileName}`);
+        setTimeout(() => {
+          triggerDownload(dataUrl, fileName);
+        }, i * 400);
+      }
+      setExportNotice(`Berhasil mengunduh berkas PNG`);
       setTimeout(() => setExportNotice(null), 4000);
     } catch (err) {
       console.error('Gagal generate PNG:', err);
@@ -736,244 +704,308 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
           )}
         </div>
 
-        {/* Scrollable Document Body */}
+        {/* Scrollable Document Body (Renders distinct A4 sheets) */}
         <div
           id="print-report-scroll-area"
-          className="flex-1 overflow-y-auto bg-slate-200/70 p-3 sm:p-6 lg:p-8 flex justify-center print:overflow-visible print:p-0 print:m-0 print:bg-white print:block print:w-full"
+          className="flex-1 overflow-y-auto bg-slate-200/70 p-3 sm:p-6 lg:p-8 flex flex-col items-center print:overflow-visible print:p-0 print:m-0 print:bg-white print:block print:w-full"
         >
-          {/* Printable Document Paper (Simulates A4 Sheet) */}
-          <div
-            id="printable-report"
-            className="w-full max-w-[820px] bg-white rounded-xl shadow-lg border border-slate-300/80 p-8 sm:p-12 text-slate-900 min-h-[1050px] print:min-h-0 print:shadow-none print:border-none print:p-0 print:m-0 print:max-w-none print:w-full print:rounded-none"
-          >
-            {/* Header Surat */}
-            <div className="flex items-start justify-between border-b-2 border-slate-900 pb-5 report-section print-avoid-break">
-              <div className="flex items-center gap-3.5">
-                {/* Logo Perusahaan */}
-                <div className="shrink-0">
-                  {modalCompanyLogo ? (
-                    <img
-                      src={modalCompanyLogo}
-                      alt="Logo Perusahaan"
-                      className="h-14 w-auto max-h-16 max-w-[130px] object-contain rounded-lg border border-slate-200 p-0.5"
-                      crossOrigin="anonymous"
-                    />
-                  ) : (
-                    <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-900 text-white font-black text-xl">
-                      {companyInitials}
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  {/* 1. Nama Perusahaan Diatas DIVISI KOPELRIEM */}
-                  <div className="text-base sm:text-lg font-black tracking-wide text-blue-950 uppercase">
-                    {modalCompanyName || 'PT. GARMENT PRESISI NUSANTARA'}
-                  </div>
-                  <h1 className="text-xs sm:text-sm font-bold tracking-tight text-slate-700 uppercase">
-                    DIVISI KOPELRIEM
-                  </h1>
-                  <p className="text-[11px] text-slate-500">
-                    Sistem Informasi Kebutuhan Konsumsi Bahan Baku (Bill of Materials)
-                  </p>
-                </div>
-              </div>
-
-              <div className="text-right text-xs text-slate-600 shrink-0">
-                <div className="inline-block rounded-md bg-slate-100 px-2.5 py-1 font-mono font-bold text-slate-800 border border-slate-200">
-                  {calculation.calculationNumber}
-                </div>
-                <div className="mt-1 text-slate-600 font-medium">
-                  Tanggal: {calculation.calculationDate}
-                </div>
-                <div className="text-slate-600">
-                  Ref PO/SPK: <strong>{calculation.customerOrPoRef || '-'}</strong>
-                </div>
-              </div>
-            </div>
-
-            {/* Section: Judul Perhitungan & Sub-Judul Ringkasan Pesanan */}
-            <div className="my-5 rounded-xl bg-slate-50 p-4 border border-slate-200 space-y-3 report-section print-avoid-break">
-              {/* Judul Perhitungan (Requirement 4) */}
-              <div className="border-b border-slate-200/80 pb-2.5">
-                <div className="text-slate-500 uppercase font-semibold text-[10px] tracking-wider">
-                  Judul Perhitungan / Uraian Pekerjaan
-                </div>
-                <div className="mt-0.5 text-base sm:text-lg font-black text-slate-900">
-                  {calculation.title || calculation.productName}
-                </div>
-              </div>
-
-              {/* Sub-Judul: Nama Produk Jadi, Nama Buyer, Qty Pesanan, Status */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
-                <div>
-                  <div className="text-slate-500 uppercase font-semibold text-[10px]">
-                    Nama Produk Jadi
-                  </div>
-                  <div className="mt-1 text-sm sm:text-base font-bold text-slate-900">
-                    {calculation.productName}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-slate-500 uppercase font-semibold text-[10px]">
-                    Nama Buyer / Pemesan
-                  </div>
-                  <div className="mt-1 text-sm sm:text-base font-bold text-blue-950">
-                    {modalBuyerName || calculation.buyerName || '-'}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-slate-500 uppercase font-semibold text-[10px]">
-                    Jumlah Pesanan (Qty)
-                  </div>
-                  <div className="mt-1 text-sm sm:text-base font-bold text-blue-900">
-                    {calculation.orderQuantity.toLocaleString('id-ID')} Pcs
-                  </div>
-                </div>
-                <div>
-                  <div className="text-slate-500 uppercase font-semibold text-[10px]">
-                    Status Dokumen
-                  </div>
-                  <div className="mt-1 flex items-center gap-1.5 font-bold text-emerald-700">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>Kalkulasi Siap Produksi</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Section 1: Ringkasan Pemakaian Bahan Baku */}
-            <div className="mb-6 report-section print-avoid-break">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 pb-2 border-b border-slate-300 flex items-center justify-between">
-                <span>1. Rekapitulasi Pemakaian Bahan Baku (Ringkasan Pengambilan Gudang)</span>
-              </h3>
-              <table className="w-full mt-3 text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-slate-300 bg-slate-100">
-                    <th className="py-2.5 px-3 font-bold text-slate-800 w-[6%]">No</th>
-                    <th className="py-2.5 px-3 font-bold text-slate-800 w-[42%]">
-                      Jenis & Spesifikasi Bahan Baku
-                    </th>
-                    <th className="py-2.5 px-3 font-bold text-slate-800 text-right w-[20%]">
-                      Kebutuhan Riil (Desimal)
-                    </th>
-                    <th className="py-2.5 px-3 font-bold text-slate-800 text-right bg-blue-50/60 w-[20%]">
-                      Ambil Gudang (Dibulatkan)
-                    </th>
-                    <th className="py-2.5 px-3 font-bold text-slate-800 w-[12%]">Satuan</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {calculation.summary.map((sum, index) => (
-                    <tr key={sum.rawMaterialId} className="hover:bg-slate-50/60 report-row print-avoid-break">
-                      <td className="py-3 px-3 text-slate-500 font-mono">{index + 1}</td>
-                      <td className="py-3 px-3">
-                        <div className="font-bold text-slate-900">{sum.rawMaterialName}</div>
-                        {sum.specification && (
-                          <div className="text-[11px] text-slate-600 mt-0.5 font-normal">
-                            {sum.specification}
+          {reportPages.map((page) => (
+            <div
+              key={page.pageNumber}
+              id={`printable-report-page-${page.pageNumber}`}
+              className="a4-page-sheet w-full max-w-[820px] bg-white rounded-xl shadow-lg border border-slate-300/80 p-8 sm:p-10 text-slate-900 min-h-[1050px] relative flex flex-col justify-between mb-8 print:mb-0 print:min-h-0 print:shadow-none print:border-none print:p-0 print:m-0 print:max-w-none print:w-full print:rounded-none"
+              style={{ boxSizing: 'border-box' }}
+            >
+              <div>
+                {/* 1. Header (Full Letterhead on Page 1, Continuation Header on Page 2+) */}
+                {page.isFirstPage ? (
+                  <div className="flex items-start justify-between border-b-2 border-slate-900 pb-5">
+                    <div className="flex items-center gap-3.5">
+                      <div className="shrink-0">
+                        {modalCompanyLogo ? (
+                          <img
+                            src={modalCompanyLogo}
+                            alt="Logo Perusahaan"
+                            className="h-14 w-auto max-h-16 max-w-[130px] object-contain rounded-lg border border-slate-200 p-0.5"
+                            crossOrigin="anonymous"
+                          />
+                        ) : (
+                          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-900 text-white font-black text-xl">
+                            {companyInitials}
                           </div>
                         )}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono font-bold text-slate-800 text-sm">
-                        {sum.totalRequired.toFixed(2)}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono font-black text-blue-950 text-base bg-blue-50/40">
-                        {sum.roundedRequired}
-                      </td>
-                      <td className="py-3 px-3 font-semibold text-slate-700">{sum.unit}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      </div>
 
-            {/* Section 2: Detail Rumus Pemakaian & Accessories */}
-            <div className="mb-6 report-section">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 pb-2 border-b border-slate-300">
-                2. Rincian Kebutuhan Accessories & Rumus Yield Pemakaian
-              </h3>
-              <table className="w-full mt-3 text-left border-collapse text-xs">
-                <thead>
-                  <tr className="border-b border-slate-300 bg-slate-100">
-                    <th className="py-2 px-2.5 font-bold text-slate-800 w-[5%]">No</th>
-                    <th className="py-2 px-2.5 font-bold text-slate-800 w-[24%]">Accessories</th>
-                    <th className="py-2 px-2.5 font-bold text-slate-800 text-center w-[11%]">Isi/Pcs</th>
-                    <th className="py-2 px-2.5 font-bold text-slate-800 text-right w-[13%]">Total Buah</th>
-                    <th className="py-2 px-2.5 font-bold text-slate-800 w-[20%]">Bahan Baku Asal</th>
-                    <th className="py-2 px-2.5 font-bold text-slate-800 text-right w-[13%]">
-                      Yield (Hasil/Lembar)
-                    </th>
-                    <th className="py-2 px-2.5 font-bold text-slate-800 text-right w-[14%]">
-                      Kebutuhan Bahan
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {calculation.details.map((d, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/60 report-row print-avoid-break">
-                      <td className="py-2.5 px-2.5 text-slate-500 font-mono">{idx + 1}</td>
-                      <td className="py-2.5 px-2.5 font-semibold text-slate-900 break-words">
-                        {d.accessoryName}
-                      </td>
-                      <td className="py-2.5 px-2.5 text-center font-mono text-slate-700">
-                        {d.qtyPerProduct} buah
-                      </td>
-                      <td className="py-2.5 px-2.5 text-right font-mono font-bold text-slate-800">
-                        {d.totalAccessoryNeeded.toLocaleString('id-ID')}
-                      </td>
-                      <td className="py-2.5 px-2.5 text-slate-700 text-[11px] break-words">
-                        {d.rawMaterialName}
-                      </td>
-                      <td className="py-2.5 px-2.5 text-right font-mono text-slate-700">
-                        {d.yieldPerUnit} buah
-                      </td>
-                      <td className="py-2.5 px-2.5 text-right font-mono font-bold text-slate-900">
-                        {d.rawMaterialWithAllowance.toFixed(2)} {d.rawMaterialUnit}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                      <div>
+                        <div className="text-base sm:text-lg font-black tracking-wide text-blue-950 uppercase">
+                          {modalCompanyName || 'PT. GARMENT PRESISI NUSANTARA'}
+                        </div>
+                        <h1 className="text-xs sm:text-sm font-bold tracking-tight text-slate-700 uppercase">
+                          DIVISI KOPELRIEM
+                        </h1>
+                        <p className="text-[11px] text-slate-500">
+                          Sistem Informasi Kebutuhan Konsumsi Bahan Baku (Bill of Materials)
+                        </p>
+                      </div>
+                    </div>
 
-            {/* Catatan / Keterangan */}
-            {calculation.notes && (
-              <div className="mb-6 rounded-lg bg-amber-50/70 p-3 text-xs text-amber-900 border border-amber-200/60 report-row print-avoid-break">
-                <span className="font-bold">Catatan Khusus Produksi:</span> {calculation.notes}
-              </div>
-            )}
+                    <div className="text-right text-xs text-slate-600 shrink-0">
+                      <div className="inline-block rounded-md bg-slate-100 px-2.5 py-1 font-mono font-bold text-slate-800 border border-slate-200">
+                        {calculation.calculationNumber}
+                      </div>
+                      <div className="mt-1 text-slate-600 font-medium">
+                        Tanggal: {calculation.calculationDate}
+                      </div>
+                      <div className="text-slate-600">
+                        Ref PO/SPK: <strong>{calculation.customerOrPoRef || '-'}</strong>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  /* Continuation Header on Page 2+ */
+                  <div className="flex items-center justify-between border-b-2 border-slate-900 pb-3 mb-4">
+                    <div className="flex items-center gap-3">
+                      {modalCompanyLogo ? (
+                        <img
+                          src={modalCompanyLogo}
+                          alt="Logo Perusahaan"
+                          className="h-10 w-auto max-h-12 max-w-[100px] object-contain rounded border border-slate-200 p-0.5"
+                          crossOrigin="anonymous"
+                        />
+                      ) : (
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-900 text-white font-black text-sm">
+                          {companyInitials}
+                        </div>
+                      )}
+                      <div>
+                        <div className="text-sm font-black tracking-wide text-blue-950 uppercase">
+                          {modalCompanyName || 'PT. GARMENT PRESISI NUSANTARA'}
+                        </div>
+                        <div className="text-[11px] font-bold text-slate-700 uppercase">
+                          DIVISI KOPELRIEM • LEMBAR {page.pageNumber} DARI {page.totalPages}
+                        </div>
+                      </div>
+                    </div>
 
-            {/* Section Tanda Tangan */}
-            <div className="mt-10 pt-6 border-t border-slate-300 grid grid-cols-3 gap-4 text-center text-xs report-row print-avoid-break">
-              <div>
-                <div className="text-slate-500">Dibuat Oleh (PPIC):</div>
-                <div className="h-16"></div>
-                <div className="font-bold text-slate-900 border-t border-dashed border-slate-400 pt-1 inline-block min-w-[140px]">
-                  ( Staff Perencanaan )
+                    <div className="text-right text-[11px] text-slate-600">
+                      <div className="font-mono font-bold text-slate-800">
+                        No: {calculation.calculationNumber}
+                      </div>
+                      <div className="text-slate-600 font-medium">
+                        Produk: <strong>{calculation.productName}</strong> ({calculation.orderQuantity.toLocaleString('id-ID')} Pcs)
+                      </div>
+                      <div className="text-slate-500">
+                        Buyer: {modalBuyerName || calculation.buyerName || '-'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. Section: Judul Perhitungan & Sub-Judul Ringkasan Pesanan (Page 1 Only) */}
+                {page.isFirstPage && (
+                  <div className="my-5 rounded-xl bg-slate-50 p-4 border border-slate-200 space-y-3">
+                    <div className="border-b border-slate-200/80 pb-2.5">
+                      <div className="text-slate-500 uppercase font-semibold text-[10px] tracking-wider">
+                        Judul Perhitungan / Uraian Pekerjaan
+                      </div>
+                      <div className="mt-0.5 text-base sm:text-lg font-black text-slate-900">
+                        {calculation.title || calculation.productName}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+                      <div>
+                        <div className="text-slate-500 uppercase font-semibold text-[10px]">
+                          Nama Produk Jadi
+                        </div>
+                        <div className="mt-1 text-sm sm:text-base font-bold text-slate-900">
+                          {calculation.productName}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-slate-500 uppercase font-semibold text-[10px]">
+                          Nama Buyer / Pemesan
+                        </div>
+                        <div className="mt-1 text-sm sm:text-base font-bold text-blue-950">
+                          {modalBuyerName || calculation.buyerName || '-'}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-slate-500 uppercase font-semibold text-[10px]">
+                          Jumlah Pesanan (Qty)
+                        </div>
+                        <div className="mt-1 text-sm sm:text-base font-bold text-blue-900">
+                          {calculation.orderQuantity.toLocaleString('id-ID')} Pcs
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-slate-500 uppercase font-semibold text-[10px]">
+                          Status Dokumen
+                        </div>
+                        <div className="mt-1 flex items-center gap-1.5 font-bold text-emerald-700">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          <span>Kalkulasi Siap Produksi</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Section 1: Ringkasan Pemakaian Bahan Baku (Page 1 Only) */}
+                {page.isFirstPage && (
+                  <div className="mb-6">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 pb-2 border-b border-slate-300 flex items-center justify-between">
+                      <span>1. Rekapitulasi Pemakaian Bahan Baku (Ringkasan Pengambilan Gudang)</span>
+                    </h3>
+                    <table className="w-full mt-3 text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="border-b border-slate-300 bg-slate-100">
+                          <th className="py-2.5 px-3 font-bold text-slate-800 w-[6%]">No</th>
+                          <th className="py-2.5 px-3 font-bold text-slate-800 w-[42%]">
+                            Jenis & Spesifikasi Bahan Baku
+                          </th>
+                          <th className="py-2.5 px-3 font-bold text-slate-800 text-right w-[20%]">
+                            Kebutuhan Riil (Desimal)
+                          </th>
+                          <th className="py-2.5 px-3 font-bold text-slate-800 text-right bg-blue-50/60 w-[20%]">
+                            Ambil Gudang (Dibulatkan)
+                          </th>
+                          <th className="py-2.5 px-3 font-bold text-slate-800 w-[12%]">Satuan</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-200">
+                        {calculation.summary.map((sum, index) => (
+                          <tr key={sum.rawMaterialId} className="hover:bg-slate-50/60">
+                            <td className="py-2.5 px-3 text-slate-500 font-mono">{index + 1}</td>
+                            <td className="py-2.5 px-3">
+                              <div className="font-bold text-slate-900">{sum.rawMaterialName}</div>
+                              {sum.specification && (
+                                <div className="text-[11px] text-slate-600 mt-0.5 font-normal">
+                                  {sum.specification}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-800 text-sm">
+                              {sum.totalRequired.toFixed(2)}
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-mono font-black text-blue-950 text-base bg-blue-50/40">
+                              {sum.roundedRequired}
+                            </td>
+                            <td className="py-2.5 px-3 font-semibold text-slate-700">{sum.unit}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* 4. Section 2: Detail Rumus Pemakaian & Accessories for this Page */}
+                <div className="mb-4">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 pb-2 border-b border-slate-300">
+                    {page.isFirstPage
+                      ? '2. Rincian Kebutuhan Accessories & Rumus Yield Pemakaian'
+                      : `2. Rincian Kebutuhan Accessories & Rumus Yield Pemakaian (Lanjutan Lembar ${page.pageNumber})`}
+                  </h3>
+                  <table className="w-full mt-3 text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-300 bg-slate-100">
+                        <th className="py-2 px-2.5 font-bold text-slate-800 w-[5%]">No</th>
+                        <th className="py-2 px-2.5 font-bold text-slate-800 w-[24%]">Accessories</th>
+                        <th className="py-2 px-2.5 font-bold text-slate-800 text-center w-[11%]">Isi/Pcs</th>
+                        <th className="py-2 px-2.5 font-bold text-slate-800 text-right w-[13%]">Total Buah</th>
+                        <th className="py-2 px-2.5 font-bold text-slate-800 w-[20%]">Bahan Baku Asal</th>
+                        <th className="py-2 px-2.5 font-bold text-slate-800 text-right w-[13%]">
+                          Yield (Hasil/Lembar)
+                        </th>
+                        <th className="py-2 px-2.5 font-bold text-slate-800 text-right w-[14%]">
+                          Kebutuhan Bahan
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {page.details.map((d, idx) => {
+                        const itemNumber = page.detailStartIndex + idx + 1;
+                        return (
+                          <tr key={idx} className="hover:bg-slate-50/60">
+                            <td className="py-2 px-2.5 text-slate-500 font-mono">{itemNumber}</td>
+                            <td className="py-2 px-2.5 font-semibold text-slate-900 break-words">
+                              {d.accessoryName}
+                            </td>
+                            <td className="py-2 px-2.5 text-center font-mono text-slate-700">
+                              {d.qtyPerProduct} buah
+                            </td>
+                            <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-800">
+                              {d.totalAccessoryNeeded.toLocaleString('id-ID')}
+                            </td>
+                            <td className="py-2 px-2.5 text-slate-700 text-[11px] break-words">
+                              {d.rawMaterialName}
+                            </td>
+                            <td className="py-2 px-2.5 text-right font-mono text-slate-700">
+                              {d.yieldPerUnit} buah
+                            </td>
+                            <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-900">
+                              {d.rawMaterialWithAllowance.toFixed(2)} {d.rawMaterialUnit}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-              <div>
-                <div className="text-slate-500">Diperiksa (Kepala Produksi):</div>
-                <div className="h-16"></div>
-                <div className="font-bold text-slate-900 border-t border-dashed border-slate-400 pt-1 inline-block min-w-[140px]">
-                  ( Ka. Bagian Cutting/Press )
-                </div>
-              </div>
-              <div>
-                <div className="text-slate-500">Diserahkan Ke (Gudang Bahan):</div>
-                <div className="h-16"></div>
-                <div className="font-bold text-slate-900 border-t border-dashed border-slate-400 pt-1 inline-block min-w-[140px]">
-                  ( Petugas Logistik/Gudang )
-                </div>
-              </div>
-            </div>
 
-            <div className="mt-8 text-center text-[10px] text-slate-400 border-t border-slate-100 pt-3 report-row print-avoid-break">
-              Dicetak secara otomatis dari Sistem GarmentPro • Tanggal cetak:{' '}
-              {new Date().toLocaleString('id-ID')}
+                {/* 5. Continuation message if report continues to next page */}
+                {!page.isLastPage && (
+                  <div className="my-4 py-2 px-3 bg-blue-50 border border-blue-200 rounded-lg text-center text-xs text-blue-800 font-semibold flex items-center justify-center gap-1.5 print:hidden">
+                    <span>▼ Rincian kebutuhan accessories berlanjut ke Halaman {page.pageNumber + 1}</span>
+                  </div>
+                )}
+
+                {/* 6. Catatan Khusus Produksi (Last Page Only) */}
+                {page.showNotes && calculation.notes && (
+                  <div className="mb-6 rounded-lg bg-amber-50/70 p-3 text-xs text-amber-900 border border-amber-200/60">
+                    <span className="font-bold">Catatan Khusus Produksi:</span> {calculation.notes}
+                  </div>
+                )}
+
+                {/* 7. Section Tanda Tangan (Last Page Only) */}
+                {page.showSignatures && (
+                  <div className="mt-8 pt-5 border-t border-slate-300 grid grid-cols-3 gap-4 text-center text-xs">
+                    <div>
+                      <div className="text-slate-500">Dibuat Oleh (PPIC):</div>
+                      <div className="h-16"></div>
+                      <div className="font-bold text-slate-900 border-t border-dashed border-slate-400 pt-1 inline-block min-w-[140px]">
+                        ( Staff Perencanaan )
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-slate-500">Diperiksa (Kepala Produksi):</div>
+                      <div className="h-16"></div>
+                      <div className="font-bold text-slate-900 border-t border-dashed border-slate-400 pt-1 inline-block min-w-[140px]">
+                        ( Ka. Bagian Cutting/Press )
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-slate-500">Diserahkan Ke (Gudang Bahan):</div>
+                      <div className="h-16"></div>
+                      <div className="font-bold text-slate-900 border-t border-dashed border-slate-400 pt-1 inline-block min-w-[140px]">
+                        ( Petugas Logistik/Gudang )
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Page Footer (Always at bottom of each A4 page) */}
+              <div className="mt-8 pt-3 border-t border-slate-200 flex items-center justify-between text-[10px] text-slate-400">
+                <span>
+                  Dicetak secara otomatis dari Sistem GarmentPro • {new Date().toLocaleString('id-ID')}
+                </span>
+                <span className="font-bold text-slate-600">
+                  Halaman {page.pageNumber} dari {page.totalPages}
+                </span>
+              </div>
             </div>
-          </div>
+          ))}
         </div>
 
         {/* Sticky Bottom Bar with explicit "Kembali ke Home" and Quick Downloads */}
@@ -1049,4 +1081,3 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
     </div>
   );
 };
-
