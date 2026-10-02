@@ -11,18 +11,21 @@ import {
   Warehouse,
   ClipboardList,
   ShieldCheck,
-  Zap
+  Zap,
+  Coins
 } from 'lucide-react';
 
 interface ModularOverviewViewProps {
   onNavigateTab: (tab: string) => void;
+  onNavigateModule?: (module: 'consumption' | 'product_costing', subTab?: string) => void;
 }
 
-export const ModularOverviewView: React.FC<ModularOverviewViewProps> = ({ onNavigateTab }) => {
+export const ModularOverviewView: React.FC<ModularOverviewViewProps> = ({ onNavigateTab, onNavigateModule }) => {
   const modules = [
     {
       id: 'konsumsi-bahan',
       name: 'Modul Konsumsi Bahan (BOM)',
+      moduleType: 'consumption' as const,
       status: 'active',
       badge: 'Modul Utama (Aktif)',
       description: 'Menghitung kebutuhan lembaran bahan baku plat kuningan, plat stainless, kain, dan accessories berdasarkan jumlah pesanan.',
@@ -32,19 +35,33 @@ export const ModularOverviewView: React.FC<ModularOverviewViewProps> = ({ onNavi
       features: ['Kalkulasi otomatis Qty pesanan', 'Rumus yield hasil per lembar', 'Cetak format PDF & Download CSV', 'Simpan, Copy, dan Edit kembali'],
     },
     {
+      id: 'product-costing',
+      name: 'Modul Product Costing (HPP & Biaya)',
+      moduleType: 'product_costing' as const,
+      status: 'active',
+      badge: 'Modul Baru (Aktif)',
+      description: 'Menghitung HPP & biaya accessories produk berdasarkan harga beli jadi dan hasil rumus yield bahan baku.',
+      targetTab: 'costing',
+      icon: Coins,
+      accent: 'amber',
+      features: ['Nama Produk dari Master Consumption', 'Nama & Harga Accessories otomatis', 'Jumlah pemakaian per pcs & total batch', 'Estimasi margin & rekomendasi harga jual'],
+    },
+    {
       id: 'master-data',
       name: 'Modul Master Data Terpadu',
+      moduleType: 'consumption' as const,
       status: 'active',
       badge: 'Tersedia & Terhubung',
-      description: 'Pusat data Master Produk (Kopelriem CN1 dll), Master Bahan Baku, dan Master Accessories dengan rumus yield.',
+      description: 'Pusat data Master Produk (Kopelriem CN1 dll), Master Bahan Baku, dan Master Accessories dengan klasifikasi Jadi vs Olah Bahan.',
       targetTab: 'products',
       icon: Layers,
       accent: 'indigo',
-      features: ['Relasi Produk - Accessories', 'Spesifikasi dimensi lembaran plat', 'Default yield per buah', 'Stok & harga estimasi'],
+      features: ['Relasi Produk - Accessories', 'Accessories Jadi (Beli Langsung)', 'Accessories Olah Bahan (Rumus Yield)', 'Harga unit bahan baku & yield'],
     },
     {
       id: 'sheets-sync',
       name: 'Modul Sinkronisasi Google Sheets',
+      moduleType: 'consumption' as const,
       status: 'active',
       badge: 'Tersedia & Terhubung',
       description: 'Menyelaraskan data offline di aplikasi dengan Google Sheets melalui Google Apps Script Web App secara otomatis.',
@@ -186,8 +203,19 @@ export const ModularOverviewView: React.FC<ModularOverviewViewProps> = ({ onNavi
               <div className="pt-2">
                 {mod.targetTab ? (
                   <button
-                    onClick={() => onNavigateTab(mod.targetTab!)}
-                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-50 py-2 text-xs font-bold text-blue-900 hover:bg-blue-100 transition"
+                    onClick={() => {
+                      if (mod.id === 'product-costing' && onNavigateModule) {
+                        onNavigateModule('product_costing');
+                      } else {
+                        if (onNavigateModule) onNavigateModule('consumption', mod.targetTab);
+                        onNavigateTab(mod.targetTab);
+                      }
+                    }}
+                    className={`w-full inline-flex items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-bold transition shadow-2xs ${
+                      mod.id === 'product-costing'
+                        ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                        : 'bg-blue-50 py-2 text-xs font-bold text-blue-900 hover:bg-blue-100'
+                    }`}
                   >
                     <span>Buka Modul Ini</span>
                     <ArrowRight className="w-3.5 h-3.5" />

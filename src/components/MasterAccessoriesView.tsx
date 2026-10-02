@@ -1,6 +1,20 @@
 import React, { useState } from 'react';
-import { Accessory, RawMaterial } from '../types';
-import { Sparkles, Plus, Edit2, Trash2, Check, X, Layers, ArrowRight } from 'lucide-react';
+import { Accessory, AccessoryCategory, RawMaterial } from '../types';
+import {
+  Sparkles,
+  Plus,
+  Edit2,
+  Trash2,
+  Check,
+  X,
+  Layers,
+  ArrowRight,
+  Package,
+  Coins,
+  Calculator,
+  Filter,
+  CheckCircle2
+} from 'lucide-react';
 
 interface MasterAccessoriesViewProps {
   accessories: Accessory[];
@@ -18,9 +32,15 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editingItem, setEditingItem] = useState<Accessory | null>(null);
 
+  // Filter tab
+  const [activeFilter, setActiveFilter] = useState<'all' | 'ready_made' | 'raw_material_based'>('all');
+
+  // Form states
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [unit, setUnit] = useState('buah');
+  const [category, setCategory] = useState<AccessoryCategory>('raw_material_based');
+  const [purchasePrice, setPurchasePrice] = useState<number>(1500);
   const [defaultRawMaterialId, setDefaultRawMaterialId] = useState('');
   const [defaultYieldPerUnit, setDefaultYieldPerUnit] = useState<number>(465);
   const [notes, setNotes] = useState('');
@@ -30,6 +50,8 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
     setCode(`ACC-00${nextNum}`);
     setName('');
     setUnit('buah');
+    setCategory('raw_material_based');
+    setPurchasePrice(1500);
     setDefaultRawMaterialId(rawMaterials[0]?.id || '');
     setDefaultYieldPerUnit(400);
     setNotes('');
@@ -42,8 +64,11 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
     setCode(a.code);
     setName(a.name);
     setUnit(a.unit);
-    setDefaultRawMaterialId(a.defaultRawMaterialId);
-    setDefaultYieldPerUnit(a.defaultYieldPerUnit);
+    const cat = a.category || (a.defaultRawMaterialId ? 'raw_material_based' : 'ready_made');
+    setCategory(cat);
+    setPurchasePrice(a.purchasePrice || 0);
+    setDefaultRawMaterialId(a.defaultRawMaterialId || (rawMaterials[0]?.id || ''));
+    setDefaultYieldPerUnit(a.defaultYieldPerUnit || 1);
     setNotes(a.notes || '');
     setIsEditing(true);
   };
@@ -57,8 +82,10 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
       code: code.trim() || `ACC-${Date.now().toString().slice(-4)}`,
       name: name.trim(),
       unit: unit.trim() || 'buah',
-      defaultRawMaterialId: defaultRawMaterialId || (rawMaterials[0]?.id || ''),
-      defaultYieldPerUnit: Number(defaultYieldPerUnit) || 1,
+      category: category,
+      purchasePrice: category === 'ready_made' ? Number(purchasePrice) || 0 : undefined,
+      defaultRawMaterialId: category === 'raw_material_based' ? (defaultRawMaterialId || (rawMaterials[0]?.id || '')) : undefined,
+      defaultYieldPerUnit: category === 'raw_material_based' ? (Number(defaultYieldPerUnit) || 1) : undefined,
       notes: notes.trim(),
       createdAt: editingItem ? editingItem.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -68,25 +95,55 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
     setIsEditing(false);
   };
 
-  const getMaterialName = (mId: string) => {
-    return rawMaterials.find((m) => m.id === mId)?.name || 'Bahan Baku Tidak Terdaftar';
+  const getMaterial = (mId?: string) => {
+    if (!mId) return null;
+    return rawMaterials.find((m) => m.id === mId) || null;
   };
 
-  const getMaterialUnit = (mId: string) => {
-    return rawMaterials.find((m) => m.id === mId)?.unit || 'Lembar';
+  // Helper to compute unit price of accessory
+  const calculateAccessoryPrice = (a: Accessory) => {
+    if (a.category === 'ready_made') {
+      return a.purchasePrice || 0;
+    }
+    const mat = getMaterial(a.defaultRawMaterialId);
+    if (!mat || !mat.unitPrice || !a.defaultYieldPerUnit || a.defaultYieldPerUnit <= 0) {
+      return 0;
+    }
+    return mat.unitPrice / a.defaultYieldPerUnit;
   };
+
+  // Active raw material selected in form
+  const selectedMaterial = getMaterial(defaultRawMaterialId);
+  const liveCalculatedPrice = selectedMaterial?.unitPrice && defaultYieldPerUnit > 0
+    ? selectedMaterial.unitPrice / defaultYieldPerUnit
+    : 0;
+
+  // Filtered accessories
+  const filteredAccessories = accessories.filter((a) => {
+    if (activeFilter === 'all') return true;
+    return a.category === activeFilter;
+  });
+
+  const readyMadeCount = accessories.filter((a) => a.category === 'ready_made').length;
+  const rawMaterialBasedCount = accessories.filter((a) => a.category === 'raw_material_based').length;
 
   return (
     <div className="space-y-6">
+      {/* Top Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-2xl bg-white p-5 border border-slate-200 shadow-xs">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-purple-50 text-purple-800">
             <Sparkles className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-slate-900">Master Data Accessories & Rumus Hasil (Yield)</h2>
-            <p className="text-xs text-slate-500">
-              Menghubungkan komponen accessories dengan bahan baku dan yield output (jumlah buah per 1 lembar)
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-bold text-slate-900">Master Data Accessories & Penentuan Harga</h2>
+              <span className="rounded-full bg-blue-100 text-blue-900 px-2 py-0.5 text-[10px] font-bold">
+                Modul Consumption
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Klasifikasi Accessories Jadi (Beli Langsung) & Accessories Olah Bahan Baku (Rumus Yield) untuk dasar HPP Product Costing
             </p>
           </div>
         </div>
@@ -100,12 +157,18 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
         </button>
       </div>
 
+      {/* Form Tambah/Edit Accessories */}
       {isEditing && (
         <div className="rounded-2xl border-2 border-purple-600 bg-white p-6 shadow-md animate-in fade-in duration-200">
           <div className="flex items-center justify-between pb-4 border-b border-slate-200 mb-5">
-            <h3 className="text-sm font-bold text-slate-900">
-              {editingItem ? 'Edit Accessories' : 'Tambah Accessories Baru'}
-            </h3>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">
+                {editingItem ? 'Edit Accessories' : 'Tambah Accessories Baru'}
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                Tentukan jenis komponen accessories apakah siap pakai atau dipotong dari lembaran bahan baku
+              </p>
+            </div>
             <button
               onClick={() => setIsEditing(false)}
               className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
@@ -114,8 +177,67 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
             </button>
           </div>
 
-          <form onSubmit={handleSave} className="space-y-4 text-xs">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <form onSubmit={handleSave} className="space-y-5 text-xs">
+            {/* 1. Pemilihan Jenis Accessories (Ready-made vs Raw-material-based) */}
+            <div>
+              <label className="block font-bold text-slate-800 mb-2">
+                Pilih Tipe / Kategori Accessories <span className="text-rose-500">*</span>
+              </label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Option 1: Accessories Jadi */}
+                <div
+                  onClick={() => setCategory('ready_made')}
+                  className={`cursor-pointer rounded-xl border-2 p-3.5 transition flex items-start gap-3 ${
+                    category === 'ready_made'
+                      ? 'border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-500/20 shadow-xs'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <div className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg ${
+                    category === 'ready_made' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    <Package className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 text-xs">1. Accessories Jadi (Beli Langsung)</span>
+                      {category === 'ready_made' && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Komponen siap pakai (contoh: buckle nylon, ring D, kancing, velcro). <strong>Langsung input harga beli satuan</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Option 2: Membutuhkan Bahan Baku */}
+                <div
+                  onClick={() => setCategory('raw_material_based')}
+                  className={`cursor-pointer rounded-xl border-2 p-3.5 transition flex items-start gap-3 ${
+                    category === 'raw_material_based'
+                      ? 'border-purple-600 bg-purple-50/60 ring-2 ring-purple-500/20 shadow-xs'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <div className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg ${
+                    category === 'raw_material_based' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    <Layers className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 text-xs">2. Membutuhkan Bahan Baku (Rumus Yield)</span>
+                      {category === 'raw_material_based' && <CheckCircle2 className="w-4 h-4 text-purple-600" />}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Dipotong dari lembaran bahan baku (contoh: kotak, lidah, bentuk U). <strong>Harga dihitung dari Harga Bahan Baku ÷ Yield</strong>.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Basic Info: Code, Name, Unit */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-slate-100">
               <div>
                 <label className="block font-semibold text-slate-700 mb-1">Kode Accessories</label>
                 <input
@@ -126,6 +248,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
                   required
                 />
               </div>
+
               <div className="sm:col-span-2">
                 <label className="block font-semibold text-slate-700 mb-1">
                   Nama Accessories <span className="text-rose-500">*</span>
@@ -134,7 +257,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Contoh: Kotak, Lidah, Bentuk U, Ujung Kopel"
+                  placeholder={category === 'ready_made' ? "Contoh: Buckle Tactical 5.5cm, Ring D Hitam, Kancing Snap" : "Contoh: Kotak, Lidah, Bentuk U, Ujung Kopel"}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 outline-hidden focus:border-purple-600"
                   required
                 />
@@ -146,60 +269,115 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
                   type="text"
                   value={unit}
                   onChange={(e) => setUnit(e.target.value)}
-                  placeholder="buah, pcs, pasang"
+                  placeholder="buah, pcs, set, pasang"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 outline-hidden focus:border-purple-600"
                   required
                 />
               </div>
 
-              <div className="sm:col-span-2">
-                <label className="block font-semibold text-slate-700 mb-1">
-                  Bahan Baku Yang Dipakai <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={defaultRawMaterialId}
-                  onChange={(e) => setDefaultRawMaterialId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 outline-hidden focus:border-purple-600 bg-white"
-                  required
-                >
-                  {rawMaterials.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name} ({m.specification || m.unit})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Conditional Block 1: Jika Accessories Jadi -> Input Harga Langsung */}
+              {category === 'ready_made' && (
+                <div className="sm:col-span-2 rounded-xl bg-emerald-50/80 p-4 border border-emerald-200">
+                  <div className="flex items-center gap-1.5 font-bold text-emerald-900 mb-1">
+                    <Coins className="w-4 h-4 text-emerald-700" />
+                    <span>Harga Beli Satuan (Accessories Jadi):</span>
+                  </div>
+                  <p className="text-[11px] text-emerald-800 mb-2">
+                    Masukkan harga beli langsung per 1 {unit || 'buah'}. Harga ini akan otomatis ditarik sebagai harga modal (cost) pada modul <strong>Product Costing</strong>.
+                  </p>
+                  <div className="flex items-center gap-2 max-w-xs">
+                    <span className="font-bold text-slate-700">Rp</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={purchasePrice}
+                      onChange={(e) => setPurchasePrice(parseFloat(e.target.value) || 0)}
+                      placeholder="Contoh: 4500"
+                      className="w-full rounded-lg border border-emerald-400 bg-white px-3 py-2 font-mono font-bold text-emerald-950 text-sm outline-hidden focus:ring-1 focus:ring-emerald-600"
+                      required
+                    />
+                    <span className="text-slate-600 font-medium whitespace-nowrap">/ {unit || 'buah'}</span>
+                  </div>
+                </div>
+              )}
 
-              <div className="sm:col-span-3 rounded-xl bg-purple-50/70 p-4 border border-purple-200">
-                <div className="font-bold text-purple-900 mb-1 flex items-center gap-1.5">
-                  <Layers className="w-4 h-4" />
-                  <span>Rumus Hasil Pemakaian (Yield):</span>
-                </div>
-                <p className="text-[11px] text-purple-800 mb-3">
-                  Berapa banyak buah accessories yang dapat dihasilkan dari 1 satuan (lembar) bahan baku terpilih?
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-bold text-slate-700">1 {getMaterialUnit(defaultRawMaterialId)} menghasilkan</span>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={defaultYieldPerUnit}
-                    onChange={(e) => setDefaultYieldPerUnit(parseFloat(e.target.value) || 1)}
-                    className="w-28 rounded-lg border border-purple-400 bg-white px-3 py-1.5 text-center font-mono font-bold text-sm text-purple-950 outline-hidden focus:ring-1 focus:ring-purple-600"
-                    required
-                  />
-                  <span className="font-bold text-slate-700">{unit} {name || 'accessories'}</span>
-                </div>
-              </div>
+              {/* Conditional Block 2: Jika Membutuhkan Bahan Baku -> Pilih Bahan & Input Yield */}
+              {category === 'raw_material_based' && (
+                <>
+                  <div className="sm:col-span-2">
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Bahan Baku Yang Dipakai <span className="text-rose-500">*</span>
+                    </label>
+                    <select
+                      value={defaultRawMaterialId}
+                      onChange={(e) => setDefaultRawMaterialId(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 outline-hidden focus:border-purple-600 bg-white"
+                      required
+                    >
+                      {rawMaterials.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} ({m.specification || m.unit}) — Rp {m.unitPrice ? m.unitPrice.toLocaleString('id-ID') : '0'} / {m.unit}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="sm:col-span-3 rounded-xl bg-purple-50/80 p-4 border border-purple-200 space-y-3">
+                    <div className="font-bold text-purple-900 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <Layers className="w-4 h-4 text-purple-700" />
+                        <span>Rumus Hasil Pemakaian (Yield Output):</span>
+                      </div>
+                      {selectedMaterial && (
+                        <span className="text-[11px] font-normal text-purple-800">
+                          Harga Bahan: <strong>Rp {selectedMaterial.unitPrice?.toLocaleString('id-ID') || 0} / {selectedMaterial.unit}</strong>
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="text-[11px] text-purple-800">
+                      Berapa banyak buah accessories yang dapat dihasilkan dari 1 satuan ({selectedMaterial?.unit || 'lembar'}) bahan baku terpilih?
+                    </p>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-bold text-slate-700">1 {selectedMaterial?.unit || 'Lembar'} menghasilkan</span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={defaultYieldPerUnit}
+                        onChange={(e) => setDefaultYieldPerUnit(parseFloat(e.target.value) || 1)}
+                        className="w-28 rounded-lg border border-purple-400 bg-white px-3 py-1.5 text-center font-mono font-bold text-sm text-purple-950 outline-hidden focus:ring-1 focus:ring-purple-600"
+                        required
+                      />
+                      <span className="font-bold text-slate-700">{unit} {name || 'accessories'}</span>
+                    </div>
+
+                    {/* Live Calculation Display */}
+                    <div className="mt-2 pt-2 border-t border-purple-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+                      <div className="flex items-center gap-1.5 text-slate-700">
+                        <Calculator className="w-3.5 h-3.5 text-purple-600" />
+                        <span>Kalkulasi Harga Modal (Cost):</span>
+                        <span className="font-mono text-slate-600">
+                          Rp {selectedMaterial?.unitPrice?.toLocaleString('id-ID') || 0} ÷ {defaultYieldPerUnit || 1} yield =
+                        </span>
+                      </div>
+                      <div className="font-mono font-black text-sm text-purple-950 bg-white px-2.5 py-1 rounded-lg border border-purple-200">
+                        Rp {liveCalculatedPrice.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {unit}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="sm:col-span-3">
-                <label className="block font-semibold text-slate-700 mb-1">Catatan</label>
+                <label className="block font-semibold text-slate-700 mb-1">Catatan Tambahan</label>
                 <input
                   type="text"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Keterangan proses plong / stamping / cutting"
+                  placeholder="Keterangan vendor supplier / proses cutting plong / spesifikasi"
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 outline-hidden focus:border-purple-600"
                 />
               </div>
@@ -218,14 +396,56 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
                 className="inline-flex items-center gap-1.5 rounded-xl bg-purple-800 px-5 py-2 text-xs font-semibold text-white hover:bg-purple-900 transition shadow-xs"
               >
                 <Check className="w-4 h-4" />
-                <span>Simpan Accessories</span>
+                <span>Simpan Master Accessories</span>
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* Accessories Table */}
+      {/* Filter Tabs Bar */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="inline-flex rounded-xl bg-slate-100 p-1 border border-slate-200 text-xs font-semibold">
+          <button
+            onClick={() => setActiveFilter('all')}
+            className={`px-3 py-1.5 rounded-lg transition ${
+              activeFilter === 'all'
+                ? 'bg-white text-slate-900 shadow-xs'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            Semua Accessories ({accessories.length})
+          </button>
+          <button
+            onClick={() => setActiveFilter('ready_made')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
+              activeFilter === 'ready_made'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-emerald-700'
+            }`}
+          >
+            <Package className="w-3.5 h-3.5" />
+            <span>Accessories Jadi ({readyMadeCount})</span>
+          </button>
+          <button
+            onClick={() => setActiveFilter('raw_material_based')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
+              activeFilter === 'raw_material_based'
+                ? 'bg-purple-700 text-white shadow-xs'
+                : 'text-slate-600 hover:text-purple-700'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Olah Bahan Baku ({rawMaterialBasedCount})</span>
+          </button>
+        </div>
+
+        <div className="text-xs text-slate-500">
+          Menampilkan <strong>{filteredAccessories.length}</strong> dari {accessories.length} accessories
+        </div>
+      </div>
+
+      {/* Table Accessories List */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
@@ -233,53 +453,101 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
               <tr className="border-b border-slate-200 bg-slate-50 text-slate-700">
                 <th className="py-3 px-4 font-bold">Kode</th>
                 <th className="py-3 px-4 font-bold">Nama Accessories</th>
-                <th className="py-3 px-4 font-bold">Bahan Baku Asal</th>
-                <th className="py-3 px-4 font-bold text-right">Rumus Yield Output</th>
+                <th className="py-3 px-4 font-bold">Kategori / Jenis</th>
+                <th className="py-3 px-4 font-bold">Sumber Bahan & Rumus Yield</th>
+                <th className="py-3 px-4 font-bold text-right">Harga Satuan (Cost)</th>
                 <th className="py-3 px-4 font-bold">Catatan</th>
                 <th className="py-3 px-4 font-bold text-center">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {accessories.map((a) => (
-                <tr key={a.id} className="hover:bg-slate-50/60">
-                  <td className="py-3 px-4 font-mono font-bold text-slate-600">{a.code}</td>
-                  <td className="py-3 px-4">
-                    <div className="font-bold text-slate-900">{a.name}</div>
-                    <div className="text-[11px] text-slate-500">Satuan: {a.unit}</div>
-                  </td>
-                  <td className="py-3 px-4">
-                    <div className="font-semibold text-slate-800">{getMaterialName(a.defaultRawMaterialId)}</div>
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <div className="inline-flex items-center gap-1.5 rounded-lg bg-purple-50 px-2.5 py-1 text-purple-900 border border-purple-200/60 font-mono font-bold">
-                      <span>1 {getMaterialUnit(a.defaultRawMaterialId)}</span>
-                      <ArrowRight className="w-3 h-3 text-purple-500" />
-                      <span>{a.defaultYieldPerUnit} {a.unit}</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-slate-500">{a.notes || '-'}</td>
-                  <td className="py-3 px-4 text-center">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        onClick={() => handleOpenEdit(a)}
-                        className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
-                        title="Edit accessories"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (confirm(`Hapus accessories ${a.name}?`)) onDeleteAccessory(a.id);
-                        }}
-                        className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
-                        title="Hapus accessories"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {filteredAccessories.map((a) => {
+                const isReady = a.category === 'ready_made';
+                const mat = getMaterial(a.defaultRawMaterialId);
+                const unitPrice = calculateAccessoryPrice(a);
+
+                return (
+                  <tr key={a.id} className="hover:bg-slate-50/60">
+                    <td className="py-3 px-4 font-mono font-bold text-slate-600">{a.code}</td>
+                    <td className="py-3 px-4">
+                      <div className="font-bold text-slate-900">{a.name}</div>
+                      <div className="text-[11px] text-slate-500">Satuan: {a.unit}</div>
+                    </td>
+                    <td className="py-3 px-4">
+                      {isReady ? (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-emerald-800 border border-emerald-200/70 font-semibold text-[11px]">
+                          <Package className="w-3 h-3 text-emerald-600" />
+                          <span>Accessories Jadi</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-1 text-purple-800 border border-purple-200/70 font-semibold text-[11px]">
+                          <Layers className="w-3 h-3 text-purple-600" />
+                          <span>Olah Bahan Baku</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4">
+                      {isReady ? (
+                        <div className="text-slate-600 text-[11px]">
+                          <span className="font-medium text-slate-800">Komponen Beli Jadi</span>
+                          <div className="text-slate-400">Siap pakai langsung rakit</div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="font-semibold text-slate-800">
+                            {mat?.name || 'Bahan Baku Tidak Terdaftar'}
+                          </div>
+                          <div className="inline-flex items-center gap-1 text-[11px] text-purple-700 font-mono mt-0.5">
+                            <span>1 {mat?.unit || 'Lembar'}</span>
+                            <ArrowRight className="w-2.5 h-2.5 text-purple-400" />
+                            <span className="font-bold">{a.defaultYieldPerUnit || 1} {a.unit}</span>
+                          </div>
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-right">
+                      {isReady ? (
+                        <div>
+                          <div className="font-mono font-bold text-emerald-800 text-sm">
+                            Rp {(a.purchasePrice || 0).toLocaleString('id-ID')}
+                          </div>
+                          <div className="text-[10px] text-emerald-600">Harga Beli Langsung</div>
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="font-mono font-bold text-purple-950 text-sm">
+                            Rp {unitPrice.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-mono">
+                            Rp {(mat?.unitPrice || 0).toLocaleString('id-ID')} ÷ {a.defaultYieldPerUnit} yield
+                          </div>
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-3 px-4 text-slate-500 text-[11px] max-w-[180px] truncate">{a.notes || '-'}</td>
+                    <td className="py-3 px-4 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => handleOpenEdit(a)}
+                          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+                          title="Edit accessories"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Hapus accessories ${a.name}?`)) onDeleteAccessory(a.id);
+                          }}
+                          className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
+                          title="Hapus accessories"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

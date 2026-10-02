@@ -36,24 +36,42 @@ export function calculateConsumption(
     const accessory = allAccessories.find((a) => a.id === rel.accessoryId);
     if (!accessory) continue;
 
+    const isReadyMade = accessory.category === 'ready_made';
     const override = customOverrides ? customOverrides[accessory.id] : undefined;
     const qtyPerProduct = override?.qtyPerProduct !== undefined ? override.qtyPerProduct : rel.qtyPerProduct;
-    const rawMaterialId = override?.rawMaterialId || accessory.defaultRawMaterialId;
-    const yieldPerUnit = override?.yieldPerUnit !== undefined && override.yieldPerUnit > 0
-      ? override.yieldPerUnit
-      : (accessory.defaultYieldPerUnit || 1);
-    const allowancePercent = override?.allowancePercent !== undefined ? override.allowancePercent : 0;
+    const rawMaterialId = isReadyMade
+      ? `direct-${accessory.id}`
+      : (override?.rawMaterialId || accessory.defaultRawMaterialId || '');
+    const yieldPerUnit = isReadyMade
+      ? 1
+      : (override?.yieldPerUnit !== undefined && override.yieldPerUnit > 0
+          ? override.yieldPerUnit
+          : (accessory.defaultYieldPerUnit || 1));
+    const allowancePercent = isReadyMade
+      ? 0
+      : (override?.allowancePercent !== undefined ? override.allowancePercent : 0);
 
-    const rawMaterial = allRawMaterials.find((m) => m.id === rawMaterialId) || {
-      id: rawMaterialId,
-      code: 'UNKNOWN',
-      name: 'Bahan Baku Tidak Diketahui',
-      specification: '-',
-      unit: 'Unit',
-      currentStock: 0,
-      createdAt: '',
-      updatedAt: '',
-    };
+    const rawMaterial: RawMaterial = isReadyMade
+      ? {
+          id: `direct-${accessory.id}`,
+          code: accessory.code,
+          name: `${accessory.name} (Beli Jadi)`,
+          specification: 'Accessories Jadi (Komponen Siap Pakai)',
+          unit: accessory.unit,
+          currentStock: 0,
+          createdAt: '',
+          updatedAt: '',
+        }
+      : (allRawMaterials.find((m) => m.id === rawMaterialId) || {
+          id: rawMaterialId,
+          code: 'UNKNOWN',
+          name: 'Bahan Baku Tidak Diketahui',
+          specification: '-',
+          unit: 'Unit',
+          currentStock: 0,
+          createdAt: '',
+          updatedAt: '',
+        });
 
     const totalAccessoryNeeded = Math.round(orderQuantity * qtyPerProduct);
     const baseRawMaterialNeeded = yieldPerUnit > 0 ? totalAccessoryNeeded / yieldPerUnit : 0;

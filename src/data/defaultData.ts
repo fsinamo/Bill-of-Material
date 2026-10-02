@@ -57,9 +57,10 @@ export const INITIAL_ACCESSORIES: Accessory[] = [
     code: 'ACC-001',
     name: 'Kotak',
     unit: 'buah',
+    category: 'raw_material_based',
     defaultRawMaterialId: 'bb-kuningan-065',
-    defaultYieldPerUnit: 465, // 1 lembar menghasilkan 465 buah
-    notes: 'Komponen buckle kotak depan kopelriem',
+    defaultYieldPerUnit: 465, // 1 lembar menghasilkan 465 buah (Harga: Rp 285.000 / 465 = Rp 612,90)
+    notes: 'Komponen buckle kotak depan kopelriem (Olah Plat Kuningan)',
     createdAt: '2026-09-01T08:00:00.000Z',
     updatedAt: '2026-09-01T08:00:00.000Z',
   },
@@ -68,9 +69,10 @@ export const INITIAL_ACCESSORIES: Accessory[] = [
     code: 'ACC-002',
     name: 'Lidah',
     unit: 'buah',
+    category: 'raw_material_based',
     defaultRawMaterialId: 'bb-stainless-08',
-    defaultYieldPerUnit: 1010, // 1 lembar menghasilkan 1010 buah
-    notes: 'Komponen lidah jepit pengunci kopelriem',
+    defaultYieldPerUnit: 1010, // 1 lembar menghasilkan 1010 buah (Harga: Rp 475.000 / 1010 = Rp 470,30)
+    notes: 'Komponen lidah jepit pengunci kopelriem (Olah Plat Stainless)',
     createdAt: '2026-09-01T08:00:00.000Z',
     updatedAt: '2026-09-01T08:00:00.000Z',
   },
@@ -79,9 +81,10 @@ export const INITIAL_ACCESSORIES: Accessory[] = [
     code: 'ACC-003',
     name: 'Bentuk U',
     unit: 'buah',
+    category: 'raw_material_based',
     defaultRawMaterialId: 'bb-kuningan-065',
-    defaultYieldPerUnit: 310, // 1 lembar menghasilkan 310 buah
-    notes: 'Komponen ring U pengait samping',
+    defaultYieldPerUnit: 310, // 1 lembar menghasilkan 310 buah (Harga: Rp 285.000 / 310 = Rp 919,35)
+    notes: 'Komponen ring U pengait samping (Olah Plat Kuningan)',
     createdAt: '2026-09-01T08:00:00.000Z',
     updatedAt: '2026-09-01T08:00:00.000Z',
   },
@@ -90,9 +93,10 @@ export const INITIAL_ACCESSORIES: Accessory[] = [
     code: 'ACC-004',
     name: 'Ujung Kopel - Ujung Gerigi',
     unit: 'buah',
+    category: 'raw_material_based',
     defaultRawMaterialId: 'bb-kuningan-065',
-    defaultYieldPerUnit: 170, // 1 lembar menghasilkan 170 buah
-    notes: 'Komponen ujung penjepit gigi tali sabuk',
+    defaultYieldPerUnit: 170, // 1 lembar menghasilkan 170 buah (Harga: Rp 285.000 / 170 = Rp 1.676,47)
+    notes: 'Komponen ujung penjepit gigi tali sabuk (Olah Plat Kuningan)',
     createdAt: '2026-09-01T08:00:00.000Z',
     updatedAt: '2026-09-01T08:00:00.000Z',
   },
@@ -101,9 +105,43 @@ export const INITIAL_ACCESSORIES: Accessory[] = [
     code: 'ACC-005',
     name: 'Ujung Kopel - U Ujung Gerigi',
     unit: 'buah',
+    category: 'raw_material_based',
     defaultRawMaterialId: 'bb-kuningan-065',
-    defaultYieldPerUnit: 540, // 1 lembar menghasilkan 540 buah
-    notes: 'Komponen ujung penjepit tipe U bergigi',
+    defaultYieldPerUnit: 540, // 1 lembar menghasilkan 540 buah (Harga: Rp 285.000 / 540 = Rp 527,78)
+    notes: 'Komponen ujung penjepit tipe U bergigi (Olah Plat Kuningan)',
+    createdAt: '2026-09-01T08:00:00.000Z',
+    updatedAt: '2026-09-01T08:00:00.000Z',
+  },
+  {
+    id: 'acc-buckle-nylon',
+    code: 'ACC-006',
+    name: 'Buckle Jepit Tactical Nylon 5.5 cm',
+    unit: 'buah',
+    category: 'ready_made',
+    purchasePrice: 4500, // Harga beli langsung Rp 4.500/buah
+    notes: 'Accessories Jadi (Beli Langsung) - Pengunci sabuk kopel tactical',
+    createdAt: '2026-09-01T08:00:00.000Z',
+    updatedAt: '2026-09-01T08:00:00.000Z',
+  },
+  {
+    id: 'acc-ring-d-baja',
+    code: 'ACC-007',
+    name: 'Ring D Baja Hitam 5 cm',
+    unit: 'buah',
+    category: 'ready_made',
+    purchasePrice: 1750, // Harga beli langsung Rp 1.750/buah
+    notes: 'Accessories Jadi (Beli Langsung) - Ring gantung perlengkapan dinas',
+    createdAt: '2026-09-01T08:00:00.000Z',
+    updatedAt: '2026-09-01T08:00:00.000Z',
+  },
+  {
+    id: 'acc-snap-button',
+    code: 'ACC-008',
+    name: 'Kancing Jepit Snap Button Kuningan Bakar',
+    unit: 'set',
+    category: 'ready_made',
+    purchasePrice: 850, // Harga beli langsung Rp 850/set
+    notes: 'Accessories Jadi (Beli Langsung) - Kancing pengunci holster',
     createdAt: '2026-09-01T08:00:00.000Z',
     updatedAt: '2026-09-01T08:00:00.000Z',
   },

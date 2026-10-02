@@ -1,4 +1,4 @@
-import { Product, RawMaterial, Accessory, CalculationRecord, GoogleSheetsConfig, SyncLog, AppThemeId } from '../types';
+import { Product, RawMaterial, Accessory, CalculationRecord, GoogleSheetsConfig, SyncLog, AppThemeId, ProductCostingRecord } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_RAW_MATERIALS, INITIAL_ACCESSORIES, INITIAL_CALCULATIONS } from '../data/defaultData';
 import { DEFAULT_THEME_ID } from '../data/themes';
 
@@ -7,6 +7,7 @@ const KEYS = {
   RAW_MATERIALS: 'garment_master_raw_materials_v1',
   ACCESSORIES: 'garment_master_accessories_v1',
   CALCULATIONS: 'garment_calculations_v1',
+  COSTINGS: 'garment_product_costings_v1',
   SHEETS_CONFIG: 'garment_sheets_config_v1',
   SYNC_LOGS: 'garment_sync_logs_v1',
   COMPANY_PROFILE: 'garment_company_profile_v1',
@@ -103,7 +104,21 @@ export const storageService = {
       return INITIAL_ACCESSORIES;
     }
     try {
-      return JSON.parse(raw);
+      const parsed: Accessory[] = JSON.parse(raw);
+      // Migrate each item to ensure category is defined
+      const migrated = parsed.map((a) => ({
+        ...a,
+        category: a.category || (a.defaultRawMaterialId ? 'raw_material_based' : 'ready_made'),
+      }));
+      // If no ready-made accessory is present, seed the defaults
+      const hasReadyMade = migrated.some((a) => a.category === 'ready_made');
+      if (!hasReadyMade) {
+        const readyDefaults = INITIAL_ACCESSORIES.filter((a) => a.category === 'ready_made');
+        const merged = [...migrated, ...readyDefaults];
+        this.saveAccessories(merged);
+        return merged;
+      }
+      return migrated;
     } catch {
       return INITIAL_ACCESSORIES;
     }
@@ -111,6 +126,44 @@ export const storageService = {
 
   saveAccessories(accessories: Accessory[]): void {
     localStorage.setItem(KEYS.ACCESSORIES, JSON.stringify(accessories));
+  },
+
+  // Product Costing Records
+  getProductCostings(): ProductCostingRecord[] {
+    const raw = localStorage.getItem(KEYS.COSTINGS);
+    if (!raw) {
+      return [];
+    }
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  },
+
+  saveProductCostings(costings: ProductCostingRecord[]): void {
+    localStorage.setItem(KEYS.COSTINGS, JSON.stringify(costings));
+  },
+
+  saveSingleProductCosting(costing: ProductCostingRecord): ProductCostingRecord[] {
+    const list = this.getProductCostings();
+    const existingIndex = list.findIndex((c) => c.id === costing.id);
+    let updated: ProductCostingRecord[];
+    if (existingIndex >= 0) {
+      updated = [...list];
+      updated[existingIndex] = costing;
+    } else {
+      updated = [costing, ...list];
+    }
+    this.saveProductCostings(updated);
+    return updated;
+  },
+
+  deleteProductCosting(id: string): ProductCostingRecord[] {
+    const list = this.getProductCostings();
+    const updated = list.filter((c) => c.id !== id);
+    this.saveProductCostings(updated);
+    return updated;
   },
 
   // Calculations

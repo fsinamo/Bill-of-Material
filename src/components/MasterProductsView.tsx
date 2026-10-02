@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Product, Accessory } from '../types';
-import { Package, Plus, Edit2, Trash2, Check, X, Calculator, Layers } from 'lucide-react';
+import { Package, Plus, Edit2, Trash2, Check, X, Calculator, Layers, Coins } from 'lucide-react';
 
 interface MasterProductsViewProps {
   products: Product[];
@@ -8,6 +8,7 @@ interface MasterProductsViewProps {
   onSaveProduct: (product: Product) => void;
   onDeleteProduct: (id: string) => void;
   onSelectForCalculation: (product: Product) => void;
+  onNavigateToCosting?: (product: Product) => void;
 }
 
 export const MasterProductsView: React.FC<MasterProductsViewProps> = ({
@@ -16,6 +17,7 @@ export const MasterProductsView: React.FC<MasterProductsViewProps> = ({
   onSaveProduct,
   onDeleteProduct,
   onSelectForCalculation,
+  onNavigateToCosting,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -327,14 +329,26 @@ export const MasterProductsView: React.FC<MasterProductsViewProps> = ({
               </div>
             </div>
 
-            <div className="pt-1">
+            <div className="pt-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button
                 onClick={() => onSelectForCalculation(prod)}
-                className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-50 py-2 text-xs font-bold text-blue-900 hover:bg-blue-100/80 transition"
+                className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-blue-50 py-2 px-3 text-xs font-bold text-blue-900 hover:bg-blue-100 transition shadow-2xs"
+                title="Buka kalkulator konsumsi bahan baku untuk produk ini"
               >
                 <Calculator className="w-3.5 h-3.5 text-blue-700" />
-                <span>Hitung Konsumsi Bahan Produk Ini</span>
+                <span>Konsumsi Bahan (BOM)</span>
               </button>
+
+              {onNavigateToCosting && (
+                <button
+                  onClick={() => onNavigateToCosting(prod)}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-50 py-2 px-3 text-xs font-bold text-amber-900 hover:bg-amber-100 transition shadow-2xs border border-amber-200"
+                  title="Buka modul Product Costing (HPP & Biaya Accessories) untuk produk ini"
+                >
+                  <Coins className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Product Costing (HPP)</span>
+                </button>
+              )}
             </div>
           </div>
         ))}

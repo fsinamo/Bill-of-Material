@@ -22,6 +22,7 @@ import { MasterRawMaterialsView } from './components/MasterRawMaterialsView';
 import { MasterAccessoriesView } from './components/MasterAccessoriesView';
 import { GoogleSheetsSyncView } from './components/GoogleSheetsSyncView';
 import { ModularOverviewView } from './components/ModularOverviewView';
+import { ProductCostingView } from './components/ProductCostingView';
 import { PrintReportModal } from './components/PrintReportModal';
 import { PWAInstallButton } from './components/PWAInstallButton';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
@@ -38,11 +39,16 @@ import {
   CloudCheck,
   RotateCw,
   Factory,
-  Palette
+  Palette,
+  Coins
 } from 'lucide-react';
 
 export default function App() {
   const isOnline = useOnlineStatus();
+
+  // App primary module state: 'consumption' | 'product_costing'
+  const [activeModule, setActiveModule] = useState<'consumption' | 'product_costing'>('consumption');
+  const [selectedCostingProductId, setSelectedCostingProductId] = useState<string | undefined>(undefined);
 
   // App state
   const [activeTab, setActiveTab] = useState<string>('calculator');
@@ -239,28 +245,67 @@ export default function App() {
       {/* Main App Bar */}
       <header className="sticky top-0 z-40 bg-[var(--app-header-bg,#1a2717)] text-white border-b border-[var(--app-header-border,#2c3f27)] shadow-sm print:hidden transition-colors duration-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
-          <div className="flex items-center justify-between gap-4">
-            {/* Logo and Brand */}
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white font-black text-lg shadow-inner">
-                <Factory className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h1 className="text-base font-black tracking-tight text-white">GarmentPro</h1>
-                  <span className="rounded bg-blue-500/20 px-2 py-0.5 text-[10px] font-bold text-blue-300 border border-blue-400/30">
-                    BOM Engine
-                  </span>
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            {/* Logo, Brand & Primary Module Switcher */}
+            <div className="flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600 text-white font-black text-lg shadow-inner">
+                  <Factory className="w-5 h-5" />
                 </div>
-                <p className="text-[11px] text-slate-300/80">
-                  Modul Konsumsi Bahan Baku & Integrasi Google Sheets
-                </p>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-base font-black tracking-tight text-white">GarmentPro</h1>
+                    <span className="rounded bg-blue-500/20 px-2 py-0.5 text-[10px] font-bold text-blue-300 border border-blue-400/30">
+                      Modular Production
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300/80">
+                    Sistem Perencanaan Produksi, Konsumsi Bahan Baku & Costing
+                  </p>
+                </div>
+              </div>
+
+              {/* Primary Modules Switcher */}
+              <div className="inline-flex rounded-2xl bg-black/40 p-1 border border-white/15 text-xs font-bold shadow-xs">
+                <button
+                  id="btn-module-consumption"
+                  type="button"
+                  onClick={() => setActiveModule('consumption')}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl transition ${
+                    activeModule === 'consumption'
+                      ? 'bg-blue-600 text-white shadow-xs ring-1 ring-white/20'
+                      : 'text-slate-300 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Scissors className="w-3.5 h-3.5 text-blue-200" />
+                  <span>Modul Consumption</span>
+                  <span className="rounded-full bg-blue-400/25 px-1.5 py-0.2 text-[9px] font-semibold text-blue-200">
+                    BOM
+                  </span>
+                </button>
+
+                <button
+                  id="btn-module-product-costing"
+                  type="button"
+                  onClick={() => setActiveModule('product_costing')}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl transition ${
+                    activeModule === 'product_costing'
+                      ? 'bg-amber-600 text-white shadow-xs ring-1 ring-white/20'
+                      : 'text-amber-200 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Coins className="w-3.5 h-3.5 text-amber-200" />
+                  <span>Modul Product Costing</span>
+                  <span className="rounded-full bg-amber-400/30 px-1.5 py-0.2 text-[9px] font-black uppercase text-amber-300 border border-amber-400/30">
+                    HPP
+                  </span>
+                </button>
               </div>
             </div>
 
             {/* Quick Badges, Theme Selector & PWA Install */}
             <div className="flex items-center gap-2.5">
-              <div className="hidden lg:flex items-center gap-2 text-xs text-slate-300">
+              <div className="hidden xl:flex items-center gap-2 text-xs text-slate-300">
                 <span className="flex items-center gap-1 bg-black/20 px-2.5 py-1 rounded-lg border border-white/10">
                   <Package className="w-3.5 h-3.5 text-blue-400" />
                   <span>{products.length} Produk</span>
@@ -270,8 +315,8 @@ export default function App() {
                   <span>{rawMaterials.length} Bahan Baku</span>
                 </span>
                 <span className="flex items-center gap-1 bg-black/20 px-2.5 py-1 rounded-lg border border-white/10">
-                  <FileText className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>{calculations.length} Tersimpan</span>
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                  <span>{accessories.length} Accessories</span>
                 </span>
               </div>
 
@@ -297,180 +342,226 @@ export default function App() {
             </div>
           </div>
 
-          {/* Navigation Tabs Bar */}
-          <nav className="flex items-center gap-1.5 mt-3 overflow-x-auto pb-1 text-xs scrollbar-none">
-            <button
-              id="nav-tab-calculator"
-              onClick={() => setActiveTab('calculator')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
-                activeTab === 'calculator'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <Scissors className="w-3.5 h-3.5" />
-              <span>Konsumsi Bahan</span>
-            </button>
+          {/* Sub Navigation Bar according to Active Primary Module */}
+          {activeModule === 'consumption' ? (
+            <nav className="flex items-center gap-1.5 mt-3 overflow-x-auto pb-1 text-xs scrollbar-none">
+              <button
+                id="nav-tab-calculator"
+                onClick={() => setActiveTab('calculator')}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
+                  activeTab === 'calculator'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Scissors className="w-3.5 h-3.5" />
+                <span>Konsumsi Bahan</span>
+              </button>
 
-            <button
-              id="nav-tab-saved"
-              onClick={() => setActiveTab('saved')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
-                activeTab === 'saved'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Riwayat Perhitungan</span>
-              {calculations.length > 0 && (
-                <span className="ml-1 rounded-full bg-black/30 px-1.5 py-0.2 text-[10px] text-slate-200">
-                  {calculations.length}
+              <button
+                id="nav-tab-saved"
+                onClick={() => setActiveTab('saved')}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
+                  activeTab === 'saved'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Riwayat Perhitungan</span>
+                {calculations.length > 0 && (
+                  <span className="ml-1 rounded-full bg-black/30 px-1.5 py-0.2 text-[10px] text-slate-200">
+                    {calculations.length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                id="nav-tab-products"
+                onClick={() => setActiveTab('products')}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
+                  activeTab === 'products'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Package className="w-3.5 h-3.5" />
+                <span>Master Produk</span>
+              </button>
+
+              <button
+                id="nav-tab-materials"
+                onClick={() => setActiveTab('materials')}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
+                  activeTab === 'materials'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Master Bahan Baku</span>
+              </button>
+
+              <button
+                id="nav-tab-accessories"
+                onClick={() => setActiveTab('accessories')}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
+                  activeTab === 'accessories'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Master Accessories & Yield</span>
+              </button>
+
+              <button
+                id="nav-tab-sheets"
+                onClick={() => setActiveTab('sheets')}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
+                  activeTab === 'sheets'
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'text-emerald-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                <span>Sinkronisasi Sheets</span>
+                {sheetsConfig.webAppUrl && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
+                )}
+              </button>
+
+              <button
+                id="nav-tab-modular"
+                onClick={() => setActiveTab('modular')}
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
+                  activeTab === 'modular'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Boxes className="w-3.5 h-3.5" />
+                <span>Arsitektur Modular</span>
+              </button>
+            </nav>
+          ) : (
+            <div className="flex items-center justify-between gap-3 mt-3 pt-1 text-xs">
+              <div className="flex items-center gap-2 text-slate-200">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-400/30 font-bold">
+                  <Coins className="w-3.5 h-3.5" />
+                  <span>Modul Aktif: Product Costing (HPP)</span>
                 </span>
-              )}
-            </button>
-
-            <button
-              id="nav-tab-products"
-              onClick={() => setActiveTab('products')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
-                activeTab === 'products'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <Package className="w-3.5 h-3.5" />
-              <span>Master Produk</span>
-            </button>
-
-            <button
-              id="nav-tab-materials"
-              onClick={() => setActiveTab('materials')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
-                activeTab === 'materials'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>Master Bahan Baku</span>
-            </button>
-
-            <button
-              id="nav-tab-accessories"
-              onClick={() => setActiveTab('accessories')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
-                activeTab === 'accessories'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Master Accessories & Yield</span>
-            </button>
-
-            <button
-              id="nav-tab-sheets"
-              onClick={() => setActiveTab('sheets')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
-                activeTab === 'sheets'
-                  ? 'bg-emerald-700 text-white shadow-xs'
-                  : 'text-emerald-300 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Sinkronisasi Sheets</span>
-              {sheetsConfig.webAppUrl && (
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-ping" />
-              )}
-            </button>
-
-            <button
-              id="nav-tab-modular"
-              onClick={() => setActiveTab('modular')}
-              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold transition shrink-0 ${
-                activeTab === 'modular'
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-300 hover:text-white hover:bg-white/10'
-              }`}
-            >
-              <Boxes className="w-3.5 h-3.5" />
-              <span>Arsitektur Modular</span>
-            </button>
-          </nav>
+                <span className="hidden md:inline text-slate-300 text-[11px]">
+                  Kalkulasi HPP & Biaya Accessories berdasarkan Master Produk & Master Accessories dari Modul Consumption.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveModule('consumption')}
+                className="inline-flex items-center gap-1 text-[11px] text-blue-200 hover:text-white bg-white/10 hover:bg-white/20 px-3 py-1 rounded-lg transition"
+              >
+                <Scissors className="w-3 h-3" />
+                <span>Beralih ke Modul Consumption</span>
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
       {/* Main Content Body */}
       <main className={`flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 ${calculationToPrint ? 'print:hidden' : ''}`}>
-        {activeTab === 'calculator' && (
-          <ConsumptionCalculator
-            products={products}
-            rawMaterials={rawMaterials}
-            accessories={accessories}
-            sheetsConfig={sheetsConfig}
-            initialCalculation={activeCalculation}
-            onSaveCalculation={handleSaveCalculation}
-            onPrintCalculation={(calc) => setCalculationToPrint(calc)}
-            onResetActiveCalculation={() => setActiveCalculation(null)}
-          />
-        )}
-
-        {activeTab === 'saved' && (
-          <SavedCalculationsView
-            calculations={calculations}
-            sheetsConfig={sheetsConfig}
-            onLoadCalculation={handleLoadCalculation}
-            onDuplicateCalculation={handleDuplicateCalculation}
-            onPrintCalculation={(calc) => setCalculationToPrint(calc)}
-            onDeleteCalculation={handleDeleteCalculation}
-            onDataUpdated={loadAllData}
-          />
-        )}
-
-        {activeTab === 'products' && (
-          <MasterProductsView
+        {/* Render Primary Module: Product Costing */}
+        {activeModule === 'product_costing' && (
+          <ProductCostingView
             products={products}
             accessories={accessories}
-            onSaveProduct={handleSaveProduct}
-            onDeleteProduct={handleDeleteProduct}
-            onSelectForCalculation={handleSelectProductForCalc}
-          />
-        )}
-
-        {activeTab === 'materials' && (
-          <MasterRawMaterialsView
             rawMaterials={rawMaterials}
-            onSaveRawMaterial={handleSaveRawMaterial}
-            onDeleteRawMaterial={handleDeleteRawMaterial}
+            initialProductId={selectedCostingProductId}
+            onNavigateToConsumption={() => setActiveModule('consumption')}
           />
         )}
 
-        {activeTab === 'accessories' && (
-          <MasterAccessoriesView
-            accessories={accessories}
-            rawMaterials={rawMaterials}
-            onSaveAccessory={handleSaveAccessory}
-            onDeleteAccessory={handleDeleteAccessory}
-          />
-        )}
+        {/* Render Primary Module: Consumption */}
+        {activeModule === 'consumption' && (
+          <>
+            {activeTab === 'calculator' && (
+              <ConsumptionCalculator
+                products={products}
+                rawMaterials={rawMaterials}
+                accessories={accessories}
+                sheetsConfig={sheetsConfig}
+                initialCalculation={activeCalculation}
+                onSaveCalculation={handleSaveCalculation}
+                onPrintCalculation={(calc) => setCalculationToPrint(calc)}
+                onResetActiveCalculation={() => setActiveCalculation(null)}
+              />
+            )}
 
-        {activeTab === 'sheets' && (
-          <GoogleSheetsSyncView
-            config={sheetsConfig}
-            onUpdateConfig={(cfg) => setSheetsConfig(cfg)}
-            calculations={calculations}
-            products={products}
-            rawMaterials={rawMaterials}
-            accessories={accessories}
-            onDataRefreshed={loadAllData}
-          />
-        )}
+            {activeTab === 'saved' && (
+              <SavedCalculationsView
+                calculations={calculations}
+                sheetsConfig={sheetsConfig}
+                onLoadCalculation={handleLoadCalculation}
+                onDuplicateCalculation={handleDuplicateCalculation}
+                onPrintCalculation={(calc) => setCalculationToPrint(calc)}
+                onDeleteCalculation={handleDeleteCalculation}
+                onDataUpdated={loadAllData}
+              />
+            )}
 
-        {activeTab === 'modular' && (
-          <ModularOverviewView
-            onNavigateTab={(tab) => setActiveTab(tab)}
-          />
+            {activeTab === 'products' && (
+              <MasterProductsView
+                products={products}
+                accessories={accessories}
+                onSaveProduct={handleSaveProduct}
+                onDeleteProduct={handleDeleteProduct}
+                onSelectForCalculation={handleSelectProductForCalc}
+                onNavigateToCosting={(prod) => {
+                  setSelectedCostingProductId(prod.id);
+                  setActiveModule('product_costing');
+                }}
+              />
+            )}
+
+            {activeTab === 'materials' && (
+              <MasterRawMaterialsView
+                rawMaterials={rawMaterials}
+                onSaveRawMaterial={handleSaveRawMaterial}
+                onDeleteRawMaterial={handleDeleteRawMaterial}
+              />
+            )}
+
+            {activeTab === 'accessories' && (
+              <MasterAccessoriesView
+                accessories={accessories}
+                rawMaterials={rawMaterials}
+                onSaveAccessory={handleSaveAccessory}
+                onDeleteAccessory={handleDeleteAccessory}
+              />
+            )}
+
+            {activeTab === 'sheets' && (
+              <GoogleSheetsSyncView
+                config={sheetsConfig}
+                onUpdateConfig={(cfg) => setSheetsConfig(cfg)}
+                calculations={calculations}
+                products={products}
+                rawMaterials={rawMaterials}
+                accessories={accessories}
+                onDataRefreshed={loadAllData}
+              />
+            )}
+
+            {activeTab === 'modular' && (
+              <ModularOverviewView
+                onNavigateTab={(tab) => setActiveTab(tab)}
+                onNavigateModule={(mod, tab) => {
+                  setActiveModule(mod);
+                  if (tab) setActiveTab(tab);
+                }}
+              />
+            )}
+          </>
         )}
       </main>
 
@@ -503,7 +594,7 @@ export default function App() {
       <footer className="mt-auto border-t border-slate-200 bg-white py-4 text-center text-xs text-slate-500 print:hidden">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <p>
-            GarmentPro Modular Production System • Divisi Perencanaan Konsumsi Bahan (BOM)
+            GarmentPro Modular Production System • Modul Consumption (BOM) & Modul Product Costing (HPP)
           </p>
           <div className="flex items-center gap-3 text-[11px] text-slate-400">
             <span>PWA Offline-Ready</span>
