@@ -261,7 +261,12 @@ export const MasterProductsView: React.FC<MasterProductsViewProps> = ({
                           className="rounded text-blue-700 focus:ring-blue-600 h-4 w-4"
                         />
                         <div className="truncate">
-                          <div className="font-semibold text-slate-800 text-xs truncate">{acc.name}</div>
+                          <div className="flex items-center gap-1 font-semibold text-slate-800 text-xs truncate">
+                            <span className="truncate">{acc.name}</span>
+                            {acc.category === 'service' && (
+                              <span className="shrink-0 text-[9px] bg-indigo-100 text-indigo-800 font-bold px-1 py-0.2 rounded">Jasa</span>
+                            )}
+                          </div>
                           <div className="text-[10px] text-slate-500 font-mono">{acc.code}</div>
                         </div>
                       </label>

@@ -36,27 +36,28 @@ export function calculateConsumption(
     const accessory = allAccessories.find((a) => a.id === rel.accessoryId);
     if (!accessory) continue;
 
-    const isReadyMade = accessory.category === 'ready_made';
+    const isDirect = accessory.category === 'ready_made' || accessory.category === 'service';
+    const isService = accessory.category === 'service';
     const override = customOverrides ? customOverrides[accessory.id] : undefined;
     const qtyPerProduct = override?.qtyPerProduct !== undefined ? override.qtyPerProduct : rel.qtyPerProduct;
-    const rawMaterialId = isReadyMade
+    const rawMaterialId = isDirect
       ? `direct-${accessory.id}`
       : (override?.rawMaterialId || accessory.defaultRawMaterialId || '');
-    const yieldPerUnit = isReadyMade
+    const yieldPerUnit = isDirect
       ? 1
       : (override?.yieldPerUnit !== undefined && override.yieldPerUnit > 0
           ? override.yieldPerUnit
           : (accessory.defaultYieldPerUnit || 1));
-    const allowancePercent = isReadyMade
+    const allowancePercent = isDirect
       ? 0
       : (override?.allowancePercent !== undefined ? override.allowancePercent : 0);
 
-    const rawMaterial: RawMaterial = isReadyMade
+    const rawMaterial: RawMaterial = isDirect
       ? {
           id: `direct-${accessory.id}`,
           code: accessory.code,
-          name: `${accessory.name} (Beli Jadi)`,
-          specification: 'Accessories Jadi (Komponen Siap Pakai)',
+          name: isService ? `${accessory.name} (Jasa Pengerjaan)` : `${accessory.name} (Beli Jadi)`,
+          specification: isService ? 'Jasa & Ongkos Pengerjaan (Non-Bahan Baku)' : 'Accessories Jadi (Komponen Siap Pakai)',
           unit: accessory.unit,
           currentStock: 0,
           createdAt: '',

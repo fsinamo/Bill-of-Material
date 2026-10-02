@@ -12,8 +12,8 @@ import {
   Package,
   Coins,
   Calculator,
-  Filter,
-  CheckCircle2
+  CheckCircle2,
+  Scissors
 } from 'lucide-react';
 
 interface MasterAccessoriesViewProps {
@@ -33,7 +33,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
   const [editingItem, setEditingItem] = useState<Accessory | null>(null);
 
   // Filter tab
-  const [activeFilter, setActiveFilter] = useState<'all' | 'ready_made' | 'raw_material_based'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'ready_made' | 'raw_material_based' | 'service'>('all');
   const [formSuccessMessage, setFormSuccessMessage] = useState<string | null>(null);
 
   // Form states
@@ -46,13 +46,15 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
   const [defaultYieldPerUnit, setDefaultYieldPerUnit] = useState<number>(465);
   const [notes, setNotes] = useState('');
 
-  const handleOpenNew = () => {
+  const handleOpenNew = (forcedCategory?: AccessoryCategory) => {
     const nextNum = accessories.length + 1;
-    setCode(`ACC-00${nextNum}`);
+    const initialCat = forcedCategory || (activeFilter !== 'all' ? activeFilter : 'ready_made');
+    const prefix = initialCat === 'service' ? 'JSA' : 'ACC';
+    setCode(`${prefix}-00${nextNum}`);
     setName('');
-    setUnit('buah');
-    setCategory('raw_material_based');
-    setPurchasePrice(1500);
+    setUnit(initialCat === 'service' ? 'pcs' : 'buah');
+    setCategory(initialCat);
+    setPurchasePrice(initialCat === 'service' ? 12500 : 1500);
     setDefaultRawMaterialId(rawMaterials[0]?.id || '');
     setDefaultYieldPerUnit(400);
     setNotes('');
@@ -66,7 +68,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
     setCode(a.code);
     setName(a.name);
     setUnit(a.unit);
-    const cat = a.category || (a.defaultRawMaterialId ? 'raw_material_based' : 'ready_made');
+    const cat: AccessoryCategory = a.category || (a.defaultRawMaterialId ? 'raw_material_based' : 'ready_made');
     setCategory(cat);
     setPurchasePrice(a.purchasePrice || 0);
     setDefaultRawMaterialId(a.defaultRawMaterialId || (rawMaterials[0]?.id || ''));
@@ -76,20 +78,34 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
     setIsEditing(true);
   };
 
+  const handleSelectCategoryOption = (selectedCat: AccessoryCategory) => {
+    setCategory(selectedCat);
+    if (!editingItem) {
+      const nextNum = accessories.length + 1;
+      const prefix = selectedCat === 'service' ? 'JSA' : 'ACC';
+      setCode(`${prefix}-00${nextNum}`);
+      if (selectedCat === 'service') {
+        if (unit === 'buah') setUnit('pcs');
+        if (purchasePrice === 1500 || purchasePrice === 0) setPurchasePrice(12500);
+      }
+    }
+  };
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
     const savedName = name.trim();
     const isNew = !editingItem;
+    const isDirectPrice = category === 'ready_made' || category === 'service';
 
     const item: Accessory = {
-      id: editingItem ? editingItem.id : `acc-${Date.now()}`,
-      code: code.trim() || `ACC-${Date.now().toString().slice(-4)}`,
+      id: editingItem ? editingItem.id : (category === 'service' ? `jasa-${Date.now()}` : `acc-${Date.now()}`),
+      code: code.trim() || (category === 'service' ? `JSA-${Date.now().toString().slice(-4)}` : `ACC-${Date.now().toString().slice(-4)}`),
       name: savedName,
-      unit: unit.trim() || 'buah',
+      unit: unit.trim() || (category === 'service' ? 'pcs' : 'buah'),
       category: category,
-      purchasePrice: category === 'ready_made' ? Number(purchasePrice) || 0 : undefined,
+      purchasePrice: isDirectPrice ? Number(purchasePrice) || 0 : undefined,
       defaultRawMaterialId: category === 'raw_material_based' ? (defaultRawMaterialId || (rawMaterials[0]?.id || '')) : undefined,
       defaultYieldPerUnit: category === 'raw_material_based' ? (Number(defaultYieldPerUnit) || 1) : undefined,
       notes: notes.trim(),
@@ -101,16 +117,19 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
 
     // Jangan kembali ke halaman asal agar tidak perlu bolak-balik jika menginput beberapa data
     if (isNew) {
-      setFormSuccessMessage(`Aksesoris "${savedName}" berhasil disimpan! Formulir siap untuk input berikutnya.`);
+      const typeLabel = category === 'service' ? 'Jasa' : 'Aksesoris';
+      setFormSuccessMessage(`${typeLabel} "${savedName}" berhasil disimpan! Formulir siap untuk input data berikutnya.`);
       const nextNum = accessories.length + 2;
-      setCode(`ACC-00${nextNum}`);
+      const prefix = category === 'service' ? 'JSA' : 'ACC';
+      setCode(`${prefix}-00${nextNum}`);
       setName('');
       setNotes('');
-      if (category === 'ready_made') {
-        setPurchasePrice(0);
+      if (isDirectPrice) {
+        setPurchasePrice(category === 'service' ? 10000 : 0);
       }
     } else {
-      setFormSuccessMessage(`Perubahan data aksesoris "${savedName}" berhasil disimpan!`);
+      const typeLabel = category === 'service' ? 'jasa' : 'aksesoris';
+      setFormSuccessMessage(`Perubahan data ${typeLabel} "${savedName}" berhasil disimpan!`);
     }
   };
 
@@ -119,9 +138,9 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
     return rawMaterials.find((m) => m.id === mId) || null;
   };
 
-  // Helper to compute unit price of accessory
+  // Helper to compute unit price of accessory or service
   const calculateAccessoryPrice = (a: Accessory) => {
-    if (a.category === 'ready_made') {
+    if (a.category === 'ready_made' || a.category === 'service') {
       return a.purchasePrice || 0;
     }
     const mat = getMaterial(a.defaultRawMaterialId);
@@ -137,7 +156,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
     ? selectedMaterial.unitPrice / defaultYieldPerUnit
     : 0;
 
-  // Filtered accessories
+  // Filtered accessories & services
   const filteredAccessories = accessories.filter((a) => {
     if (activeFilter === 'all') return true;
     return a.category === activeFilter;
@@ -145,6 +164,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
 
   const readyMadeCount = accessories.filter((a) => a.category === 'ready_made').length;
   const rawMaterialBasedCount = accessories.filter((a) => a.category === 'raw_material_based').length;
+  const serviceCount = accessories.filter((a) => a.category === 'service').length;
 
   return (
     <div className="space-y-6">
@@ -156,36 +176,52 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-bold text-slate-900">Master Data Accessories & Penentuan Harga</h2>
+              <h2 className="text-base font-bold text-slate-900">Master Accessories & Jasa</h2>
               <span className="rounded-full bg-blue-100 text-blue-900 px-2 py-0.5 text-[10px] font-bold">
-                Modul Consumption
+                Modul Consumption & Costing
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Klasifikasi Accessories Jadi (Beli Langsung) & Accessories Olah Bahan Baku (Rumus Yield) untuk dasar HPP Product Costing
+              Klasifikasi Accessories Jadi (Beli Langsung), Olahan Bahan Baku (Rumus Yield), dan Jasa / Ongkos Pengerjaan untuk dasar kalkulasi HPP Product Costing
             </p>
           </div>
         </div>
-        <button
-          id="btn-add-accessory"
-          onClick={handleOpenNew}
-          className="inline-flex items-center gap-1.5 rounded-xl bg-blue-800 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-900 transition shadow-xs"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Tambah Accessories</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            id="btn-add-service"
+            type="button"
+            onClick={() => handleOpenNew('service')}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-50 border border-indigo-200 px-3.5 py-2 text-xs font-bold text-indigo-800 hover:bg-indigo-100 transition shadow-xs"
+          >
+            <Scissors className="w-4 h-4 text-indigo-600" />
+            <span>+ Tambah Jasa</span>
+          </button>
+          <button
+            id="btn-add-accessory"
+            type="button"
+            onClick={() => handleOpenNew('ready_made')}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-blue-800 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-900 transition shadow-xs"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Tambah Accessories</span>
+          </button>
+        </div>
       </div>
 
-      {/* Form Tambah/Edit Accessories */}
+      {/* Form Tambah/Edit Accessories & Jasa */}
       {isEditing && (
         <div className="rounded-2xl border-2 border-purple-600 bg-white p-6 shadow-md animate-in fade-in duration-200">
           <div className="flex items-center justify-between pb-4 border-b border-slate-200 mb-5">
             <div>
               <h3 className="text-sm font-bold text-slate-900">
-                {editingItem ? 'Edit Accessories' : 'Tambah Accessories Baru'}
+                {editingItem
+                  ? (category === 'service' ? 'Edit Data Jasa / Ongkos Pengerjaan' : 'Edit Accessories')
+                  : (category === 'service' ? 'Tambah Jasa / Ongkos Pengerjaan Baru' : 'Tambah Accessories / Jasa Baru')}
               </h3>
               <p className="text-[11px] text-slate-500">
-                Tentukan jenis komponen accessories apakah siap pakai atau dipotong dari lembaran bahan baku
+                {category === 'service'
+                  ? 'Input nama jasa dan tarif pengerjaan untuk diintegrasikan ke dalam kalkulasi Product Costing'
+                  : 'Tentukan jenis komponen accessories apakah siap pakai, dipotong dari lembaran bahan baku, atau jasa pengerjaan'}
               </p>
             </div>
             <button
@@ -218,58 +254,83 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
           )}
 
           <form onSubmit={handleSave} className="space-y-5 text-xs">
-            {/* 1. Pemilihan Jenis Accessories (Ready-made vs Raw-material-based) */}
+            {/* 1. Pemilihan Jenis: Ready-made vs Raw-material-based vs Jasa / Service */}
             <div>
               <label className="block font-bold text-slate-800 mb-2">
-                Pilih Tipe / Kategori Accessories <span className="text-rose-500">*</span>
+                Pilih Tipe / Kategori Komponen <span className="text-rose-500">*</span>
               </label>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {/* Option 1: Accessories Jadi */}
                 <div
-                  onClick={() => setCategory('ready_made')}
+                  onClick={() => handleSelectCategoryOption('ready_made')}
                   className={`cursor-pointer rounded-xl border-2 p-3.5 transition flex items-start gap-3 ${
                     category === 'ready_made'
                       ? 'border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-500/20 shadow-xs'
                       : 'border-slate-200 hover:border-slate-300 bg-white'
                   }`}
                 >
-                  <div className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg ${
+                  <div className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg shrink-0 ${
                     category === 'ready_made' ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-500'
                   }`}>
                     <Package className="w-4 h-4" />
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-900 text-xs">1. Accessories Jadi (Beli Langsung)</span>
+                      <span className="font-bold text-slate-900 text-xs">1. Accessories Jadi</span>
                       {category === 'ready_made' && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      Komponen siap pakai (contoh: buckle nylon, ring D, kancing, velcro). <strong>Langsung input harga beli satuan</strong>.
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                      Komponen siap pakai (buckle, ring D, kancing, velcro). <strong>Komponen: Nama & Harga Beli Satuan</strong>.
                     </p>
                   </div>
                 </div>
 
                 {/* Option 2: Membutuhkan Bahan Baku */}
                 <div
-                  onClick={() => setCategory('raw_material_based')}
+                  onClick={() => handleSelectCategoryOption('raw_material_based')}
                   className={`cursor-pointer rounded-xl border-2 p-3.5 transition flex items-start gap-3 ${
                     category === 'raw_material_based'
                       ? 'border-purple-600 bg-purple-50/60 ring-2 ring-purple-500/20 shadow-xs'
                       : 'border-slate-200 hover:border-slate-300 bg-white'
                   }`}
                 >
-                  <div className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg ${
+                  <div className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg shrink-0 ${
                     category === 'raw_material_based' ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-500'
                   }`}>
                     <Layers className="w-4 h-4" />
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-slate-900 text-xs">2. Membutuhkan Bahan Baku (Rumus Yield)</span>
+                      <span className="font-bold text-slate-900 text-xs">2. Olah Bahan Baku</span>
                       {category === 'raw_material_based' && <CheckCircle2 className="w-4 h-4 text-purple-600" />}
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      Dipotong dari lembaran bahan baku (contoh: kotak, lidah, bentuk U). <strong>Harga dihitung dari Harga Bahan Baku ÷ Yield</strong>.
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                      Dipotong dari lembaran (kotak, lidah, bentuk U). <strong>Harga = Harga Bahan ÷ Yield</strong>.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Option 3: Jasa / Ongkos Pengerjaan */}
+                <div
+                  onClick={() => handleSelectCategoryOption('service')}
+                  className={`cursor-pointer rounded-xl border-2 p-3.5 transition flex items-start gap-3 ${
+                    category === 'service'
+                      ? 'border-indigo-600 bg-indigo-50/70 ring-2 ring-indigo-500/20 shadow-xs'
+                      : 'border-slate-200 hover:border-slate-300 bg-white'
+                  }`}
+                >
+                  <div className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg shrink-0 ${
+                    category === 'service' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-500'
+                  }`}>
+                    <Scissors className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 text-xs">3. Jasa / Ongkos Kerja</span>
+                      {category === 'service' && <CheckCircle2 className="w-4 h-4 text-indigo-600" />}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                      Biaya proses (jahit rompi, bordir, sablon, cutting, QC). <strong>Komponen: Nama & Tarif / Harga</strong>.
                     </p>
                   </div>
                 </div>
@@ -279,7 +340,9 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
             {/* Basic Info: Code, Name, Unit */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-slate-100">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Kode Accessories</label>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  {category === 'service' ? 'Kode Jasa' : 'Kode Accessories'}
+                </label>
                 <input
                   type="text"
                   value={code}
@@ -291,25 +354,33 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
 
               <div className="sm:col-span-2">
                 <label className="block font-semibold text-slate-700 mb-1">
-                  Nama Accessories <span className="text-rose-500">*</span>
+                  {category === 'service' ? 'Nama Jasa / Biaya Pengerjaan' : 'Nama Accessories'} <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder={category === 'ready_made' ? "Contoh: Buckle Tactical 5.5cm, Ring D Hitam, Kancing Snap" : "Contoh: Kotak, Lidah, Bentuk U, Ujung Kopel"}
+                  placeholder={
+                    category === 'service'
+                      ? "Contoh: Jasa Jahit Rompi, Jasa Bordir Logo / Emblem, Jasa Cutting Plong, Jasa Finishing & QC"
+                      : (category === 'ready_made'
+                          ? "Contoh: Buckle Tactical 5.5cm, Ring D Hitam, Kancing Snap"
+                          : "Contoh: Kotak, Lidah, Bentuk U, Ujung Kopel")
+                  }
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 outline-hidden focus:border-purple-600"
                   required
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Satuan Accessories</label>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  {category === 'service' ? 'Satuan Pengerjaan' : 'Satuan Komponen'}
+                </label>
                 <input
                   type="text"
                   value={unit}
                   onChange={(e) => setUnit(e.target.value)}
-                  placeholder="buah, pcs, set, pasang"
+                  placeholder={category === 'service' ? "pcs, titik, set, jam, pasang" : "buah, pcs, set, pasang"}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 outline-hidden focus:border-purple-600"
                   required
                 />
@@ -330,7 +401,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
                     <input
                       type="number"
                       min="0"
-                      step="1"
+                      step="any"
                       value={purchasePrice}
                       onChange={(e) => setPurchasePrice(parseFloat(e.target.value) || 0)}
                       placeholder="Contoh: 4500"
@@ -338,6 +409,33 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
                       required
                     />
                     <span className="text-slate-600 font-medium whitespace-nowrap">/ {unit || 'buah'}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Conditional Block 3: Jika Jasa / Ongkos Pengerjaan -> Input Tarif / Harga Jasa Satuan */}
+              {category === 'service' && (
+                <div className="sm:col-span-2 rounded-xl bg-indigo-50/80 p-4 border border-indigo-200">
+                  <div className="flex items-center gap-1.5 font-bold text-indigo-900 mb-1">
+                    <Coins className="w-4 h-4 text-indigo-700" />
+                    <span>Tarif / Harga Jasa Satuan:</span>
+                  </div>
+                  <p className="text-[11px] text-indigo-800 mb-2">
+                    Sama seperti accessories jadi, cukup masukkan nama dan harga jasa per 1 {unit || 'pcs'}. Harga ini akan otomatis ditarik ke dalam perhitungan <strong>Product Costing</strong>.
+                  </p>
+                  <div className="flex items-center gap-2 max-w-xs">
+                    <span className="font-bold text-slate-700">Rp</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={purchasePrice}
+                      onChange={(e) => setPurchasePrice(parseFloat(e.target.value) || 0)}
+                      placeholder="Contoh: 12500"
+                      className="w-full rounded-lg border border-indigo-400 bg-white px-3 py-2 font-mono font-bold text-indigo-950 text-sm outline-hidden focus:ring-1 focus:ring-indigo-600"
+                      required
+                    />
+                    <span className="text-slate-600 font-medium whitespace-nowrap">/ {unit || 'pcs'}</span>
                   </div>
                 </div>
               )}
@@ -417,7 +515,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
                   type="text"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Keterangan vendor supplier / proses cutting plong / spesifikasi"
+                  placeholder={category === 'service' ? "Keterangan vendor bordir / operator penjahit / detail proses kerja" : "Keterangan vendor supplier / proses cutting plong / spesifikasi"}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 outline-hidden focus:border-purple-600"
                 />
               </div>
@@ -425,7 +523,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
 
             <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100 flex-wrap">
               <div className="text-[11px] text-slate-500 font-medium">
-                {!editingItem && '💡 Setelah simpan, formulir akan tetap terbuka agar Anda dapat langsung menginput data berikutnya.'}
+                {!editingItem && '💡 Setelah simpan, formulir akan tetap terbuka agar Anda dapat langsung menginput data berikutnya tanpa keluar menu.'}
               </div>
 
               <div className="flex items-center gap-2 ml-auto">
@@ -444,7 +542,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
                   className="inline-flex items-center gap-1.5 rounded-xl bg-purple-800 px-5 py-2 text-xs font-semibold text-white hover:bg-purple-900 transition shadow-xs"
                 >
                   <Check className="w-4 h-4" />
-                  <span>{editingItem ? 'Simpan Perubahan' : '💾 Simpan & Input Aksesoris Lain'}</span>
+                  <span>{editingItem ? 'Simpan Perubahan' : (category === 'service' ? '💾 Simpan & Input Jasa Lain' : '💾 Simpan & Input Data Lain')}</span>
                 </button>
               </div>
             </div>
@@ -463,7 +561,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            Semua Accessories ({accessories.length})
+            Semua ({accessories.length})
           </button>
           <button
             onClick={() => setActiveFilter('ready_made')}
@@ -487,116 +585,153 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
             <Layers className="w-3.5 h-3.5" />
             <span>Olah Bahan Baku ({rawMaterialBasedCount})</span>
           </button>
+          <button
+            onClick={() => setActiveFilter('service')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
+              activeFilter === 'service'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-indigo-700'
+            }`}
+          >
+            <Scissors className="w-3.5 h-3.5" />
+            <span>Jasa & Pengerjaan ({serviceCount})</span>
+          </button>
         </div>
 
         <div className="text-xs text-slate-500">
-          Menampilkan <strong>{filteredAccessories.length}</strong> dari {accessories.length} accessories
+          Menampilkan <strong>{filteredAccessories.length}</strong> dari {accessories.length} data
         </div>
       </div>
 
-      {/* Table Accessories List */}
+      {/* Table Accessories & Jasa List */}
       <div className="rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50 text-slate-700">
                 <th className="py-3 px-4 font-bold">Kode</th>
-                <th className="py-3 px-4 font-bold">Nama Accessories</th>
+                <th className="py-3 px-4 font-bold">Nama Aksesoris / Jasa</th>
                 <th className="py-3 px-4 font-bold">Kategori / Jenis</th>
-                <th className="py-3 px-4 font-bold">Sumber Bahan & Rumus Yield</th>
-                <th className="py-3 px-4 font-bold text-right">Harga Satuan (Cost)</th>
+                <th className="py-3 px-4 font-bold">Sumber Bahan / Proses</th>
+                <th className="py-3 px-4 font-bold text-right">Harga Satuan / Tarif (Cost)</th>
                 <th className="py-3 px-4 font-bold">Catatan</th>
                 <th className="py-3 px-4 font-bold text-center">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {filteredAccessories.map((a) => {
-                const isReady = a.category === 'ready_made';
-                const mat = getMaterial(a.defaultRawMaterialId);
-                const unitPrice = calculateAccessoryPrice(a);
+              {filteredAccessories.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-8 text-center text-slate-400">
+                    Tidak ada data pada kategori ini. Klik tombol "+ Tambah" diatas untuk memasukkan data baru.
+                  </td>
+                </tr>
+              ) : (
+                filteredAccessories.map((a) => {
+                  const isReady = a.category === 'ready_made';
+                  const isService = a.category === 'service';
+                  const mat = getMaterial(a.defaultRawMaterialId);
+                  const unitPrice = calculateAccessoryPrice(a);
 
-                return (
-                  <tr key={a.id} className="hover:bg-slate-50/60">
-                    <td className="py-3 px-4 font-mono font-bold text-slate-600">{a.code}</td>
-                    <td className="py-3 px-4">
-                      <div className="font-bold text-slate-900">{a.name}</div>
-                      <div className="text-[11px] text-slate-500">Satuan: {a.unit}</div>
-                    </td>
-                    <td className="py-3 px-4">
-                      {isReady ? (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-emerald-800 border border-emerald-200/70 font-semibold text-[11px]">
-                          <Package className="w-3 h-3 text-emerald-600" />
-                          <span>Accessories Jadi</span>
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-1 text-purple-800 border border-purple-200/70 font-semibold text-[11px]">
-                          <Layers className="w-3 h-3 text-purple-600" />
-                          <span>Olah Bahan Baku</span>
-                        </span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4">
-                      {isReady ? (
-                        <div className="text-slate-600 text-[11px]">
-                          <span className="font-medium text-slate-800">Komponen Beli Jadi</span>
-                          <div className="text-slate-400">Siap pakai langsung rakit</div>
+                  return (
+                    <tr key={a.id} className="hover:bg-slate-50/60">
+                      <td className="py-3 px-4 font-mono font-bold text-slate-600">{a.code}</td>
+                      <td className="py-3 px-4">
+                        <div className="font-bold text-slate-900">{a.name}</div>
+                        <div className="text-[11px] text-slate-500">Satuan: {a.unit}</div>
+                      </td>
+                      <td className="py-3 px-4">
+                        {isService ? (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-indigo-50 px-2 py-1 text-indigo-800 border border-indigo-200/70 font-semibold text-[11px]">
+                            <Scissors className="w-3 h-3 text-indigo-600" />
+                            <span>Jasa Pengerjaan</span>
+                          </span>
+                        ) : isReady ? (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-emerald-800 border border-emerald-200/70 font-semibold text-[11px]">
+                            <Package className="w-3 h-3 text-emerald-600" />
+                            <span>Accessories Jadi</span>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-md bg-purple-50 px-2 py-1 text-purple-800 border border-purple-200/70 font-semibold text-[11px]">
+                            <Layers className="w-3 h-3 text-purple-600" />
+                            <span>Olah Bahan Baku</span>
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4">
+                        {isService ? (
+                          <div className="text-slate-600 text-[11px]">
+                            <span className="font-medium text-indigo-900">Ongkos Kerja / Operasional</span>
+                            <div className="text-slate-400">Jahit, bordir, finishing, non-bahan</div>
+                          </div>
+                        ) : isReady ? (
+                          <div className="text-slate-600 text-[11px]">
+                            <span className="font-medium text-slate-800">Komponen Beli Jadi</span>
+                            <div className="text-slate-400">Siap pakai langsung rakit</div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div className="font-semibold text-slate-800">
+                              {mat?.name || 'Bahan Baku Tidak Terdaftar'}
+                            </div>
+                            <div className="inline-flex items-center gap-1 text-[11px] text-purple-700 font-mono mt-0.5">
+                              <span>1 {mat?.unit || 'Lembar'}</span>
+                              <ArrowRight className="w-2.5 h-2.5 text-purple-400" />
+                              <span className="font-bold">{a.defaultYieldPerUnit || 1} {a.unit}</span>
+                            </div>
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        {isService ? (
+                          <div>
+                            <div className="font-mono font-bold text-indigo-900 text-sm">
+                              Rp {(a.purchasePrice || 0).toLocaleString('id-ID')}
+                            </div>
+                            <div className="text-[10px] text-indigo-600 font-medium">Tarif Jasa Satuan</div>
+                          </div>
+                        ) : isReady ? (
+                          <div>
+                            <div className="font-mono font-bold text-emerald-800 text-sm">
+                              Rp {(a.purchasePrice || 0).toLocaleString('id-ID')}
+                            </div>
+                            <div className="text-[10px] text-emerald-600">Harga Beli Langsung</div>
+                          </div>
+                        ) : (
+                          <div>
+                            <div className="font-mono font-bold text-purple-950 text-sm">
+                              Rp {unitPrice.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-mono">
+                              Rp {(mat?.unitPrice || 0).toLocaleString('id-ID')} ÷ {a.defaultYieldPerUnit} yield
+                            </div>
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-slate-500 text-[11px] max-w-[180px] truncate">{a.notes || '-'}</td>
+                      <td className="py-3 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => handleOpenEdit(a)}
+                            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+                            title="Edit data"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (confirm(`Hapus ${a.category === 'service' ? 'jasa' : 'accessories'} "${a.name}"?`)) onDeleteAccessory(a.id);
+                            }}
+                            className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
+                            title="Hapus data"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                      ) : (
-                        <div>
-                          <div className="font-semibold text-slate-800">
-                            {mat?.name || 'Bahan Baku Tidak Terdaftar'}
-                          </div>
-                          <div className="inline-flex items-center gap-1 text-[11px] text-purple-700 font-mono mt-0.5">
-                            <span>1 {mat?.unit || 'Lembar'}</span>
-                            <ArrowRight className="w-2.5 h-2.5 text-purple-400" />
-                            <span className="font-bold">{a.defaultYieldPerUnit || 1} {a.unit}</span>
-                          </div>
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      {isReady ? (
-                        <div>
-                          <div className="font-mono font-bold text-emerald-800 text-sm">
-                            Rp {(a.purchasePrice || 0).toLocaleString('id-ID')}
-                          </div>
-                          <div className="text-[10px] text-emerald-600">Harga Beli Langsung</div>
-                        </div>
-                      ) : (
-                        <div>
-                          <div className="font-mono font-bold text-purple-950 text-sm">
-                            Rp {unitPrice.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                          </div>
-                          <div className="text-[10px] text-slate-500 font-mono">
-                            Rp {(mat?.unitPrice || 0).toLocaleString('id-ID')} ÷ {a.defaultYieldPerUnit} yield
-                          </div>
-                        </div>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-slate-500 text-[11px] max-w-[180px] truncate">{a.notes || '-'}</td>
-                    <td className="py-3 px-4 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => handleOpenEdit(a)}
-                          className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
-                          title="Edit accessories"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            if (confirm(`Hapus accessories ${a.name}?`)) onDeleteAccessory(a.id);
-                          }}
-                          className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
-                          title="Hapus accessories"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
             </tbody>
           </table>
         </div>

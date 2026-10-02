@@ -316,7 +316,7 @@ export default function App() {
                 </span>
                 <span className="flex items-center gap-1 bg-black/20 px-2.5 py-1 rounded-lg border border-white/10">
                   <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                  <span>{accessories.length} Accessories</span>
+                  <span>{accessories.length} Accessories & Jasa</span>
                 </span>
               </div>
 
@@ -412,7 +412,7 @@ export default function App() {
                 }`}
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Master Accessories & Yield</span>
+                <span>Master Accessories & Jasa</span>
               </button>
 
               <button

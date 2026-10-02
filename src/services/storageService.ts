@@ -112,13 +112,23 @@ export const storageService = {
       }));
       // If no ready-made accessory is present, seed the defaults
       const hasReadyMade = migrated.some((a) => a.category === 'ready_made');
+      let currentList = migrated;
       if (!hasReadyMade) {
         const readyDefaults = INITIAL_ACCESSORIES.filter((a) => a.category === 'ready_made');
-        const merged = [...migrated, ...readyDefaults];
-        this.saveAccessories(merged);
-        return merged;
+        currentList = [...currentList, ...readyDefaults];
       }
-      return migrated;
+      // If no service / jasa is present, seed default jasa
+      const hasService = currentList.some((a) => a.category === 'service');
+      if (!hasService) {
+        const serviceDefaults = INITIAL_ACCESSORIES.filter((a) => a.category === 'service');
+        if (serviceDefaults.length > 0) {
+          currentList = [...currentList, ...serviceDefaults];
+        }
+      }
+      if (currentList.length !== parsed.length) {
+        this.saveAccessories(currentList);
+      }
+      return currentList;
     } catch {
       return INITIAL_ACCESSORIES;
     }

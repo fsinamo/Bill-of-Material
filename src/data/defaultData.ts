@@ -1,5 +1,13 @@
 import { Product, RawMaterial, Accessory, CalculationRecord } from '../types';
 
+export const companyProfile = {
+  companyName: 'PT. GARMENT PRESISI NUSANTARA',
+  companyAddress: 'Kawasan Industri Tekstil & Perlengkapan Militer, Bandung, Jawa Barat',
+  defaultBuyerName: 'MABES TNI / KEMHAN RI',
+  phone: '(022) 8765-4321',
+  email: 'info@garmentpro.co.id',
+};
+
 export const INITIAL_RAW_MATERIALS: RawMaterial[] = [
   {
     id: 'bb-kuningan-065',
@@ -142,6 +150,50 @@ export const INITIAL_ACCESSORIES: Accessory[] = [
     category: 'ready_made',
     purchasePrice: 850, // Harga beli langsung Rp 850/set
     notes: 'Accessories Jadi (Beli Langsung) - Kancing pengunci holster',
+    createdAt: '2026-09-01T08:00:00.000Z',
+    updatedAt: '2026-09-01T08:00:00.000Z',
+  },
+  {
+    id: 'jasa-jahit-perakitan',
+    code: 'JSA-001',
+    name: 'Jasa Jahit & Perakitan Kopel',
+    unit: 'pcs',
+    category: 'service',
+    purchasePrice: 12500, // Tarif jasa Rp 12.500/pcs
+    notes: 'Jasa / Ongkos Kerja - Jahit webbing nilon, bartack penguat & perakitan buckle',
+    createdAt: '2026-09-01T08:00:00.000Z',
+    updatedAt: '2026-09-01T08:00:00.000Z',
+  },
+  {
+    id: 'jasa-bordir-velcro',
+    code: 'JSA-002',
+    name: 'Jasa Bordir Komputer Logo / Emblem',
+    unit: 'titik',
+    category: 'service',
+    purchasePrice: 4500, // Tarif jasa Rp 4.500/titik
+    notes: 'Jasa / Ongkos Kerja - Bordir komputer benang nylon militer',
+    createdAt: '2026-09-01T08:00:00.000Z',
+    updatedAt: '2026-09-01T08:00:00.000Z',
+  },
+  {
+    id: 'jasa-cutting-press',
+    code: 'JSA-003',
+    name: 'Jasa Cutting Pola & Press Plong',
+    unit: 'pcs',
+    category: 'service',
+    purchasePrice: 3500, // Tarif jasa Rp 3.500/pcs
+    notes: 'Jasa / Ongkos Kerja - Potong pola plat kuningan & webbing mesin plong',
+    createdAt: '2026-09-01T08:00:00.000Z',
+    updatedAt: '2026-09-01T08:00:00.000Z',
+  },
+  {
+    id: 'jasa-finishing-qc',
+    code: 'JSA-004',
+    name: 'Jasa Finishing, Trimming & QC Packing',
+    unit: 'pcs',
+    category: 'service',
+    purchasePrice: 2500, // Tarif jasa Rp 2.500/pcs
+    notes: 'Jasa / Ongkos Kerja - Trimming sisa benang, inspeksi mutu & packing plastik OPP',
     createdAt: '2026-09-01T08:00:00.000Z',
     updatedAt: '2026-09-01T08:00:00.000Z',
   },

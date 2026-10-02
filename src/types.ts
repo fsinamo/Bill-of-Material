@@ -28,15 +28,15 @@ export interface RawMaterial {
   updatedAt: string;
 }
 
-export type AccessoryCategory = 'ready_made' | 'raw_material_based';
+export type AccessoryCategory = 'ready_made' | 'raw_material_based' | 'service';
 
 export interface Accessory {
   id: string;
   code: string;
   name: string;
   unit: string;
-  category: AccessoryCategory; // 'ready_made' (Accessories Jadi) | 'raw_material_based' (Membutuhkan Bahan Baku)
-  purchasePrice?: number; // Harga beli satuan (Rp) jika accessories jadi
+  category: AccessoryCategory; // 'ready_made' (Accessories Jadi) | 'raw_material_based' (Membutuhkan Bahan Baku) | 'service' (Jasa / Biaya Pengerjaan)
+  purchasePrice?: number; // Harga beli satuan (Rp) jika accessories jadi ATAU tarif jasa (Rp) jika jasa
   defaultRawMaterialId?: string; // ID bahan baku jika membutuhkan bahan baku
   defaultYieldPerUnit?: number; // Yield / hasil per 1 unit bahan baku jika membutuhkan bahan baku
   notes?: string;
@@ -51,8 +51,8 @@ export interface ProductCostingItem {
   rawMaterialName?: string;
   rawMaterialUnitPrice?: number;
   yieldPerUnit?: number;
-  unitPrice: number; // Harga per satuan accessory (Rp)
-  usageQtyPerProduct: number; // Jumlah pemakaian per pcs produk
+  unitPrice: number; // Harga per satuan accessory / tarif jasa (Rp)
+  usageQtyPerProduct: number; // Jumlah pemakaian / frekuensi pengerjaan per pcs produk
   totalUsageQty: number; // Total pemakaian untuk seluruh pesanan
   totalCostPerProduct: number; // Biaya per pcs produk (usageQtyPerProduct * unitPrice)
   totalCostBatch: number; // Total biaya batch pesanan (totalUsageQty * unitPrice)
@@ -69,8 +69,12 @@ export interface ProductCostingRecord {
   productCategory?: string;
   orderQuantity: number;
   items: ProductCostingItem[];
-  totalCostPerUnit: number; // Total HPP / Biaya Accessories per 1 pcs produk
-  totalBatchCost: number; // Total Biaya Accessories untuk seluruh orderQuantity
+  totalCostPerUnit: number; // Total HPP / Biaya per 1 pcs produk (Accessories + Jasa)
+  totalBatchCost: number; // Total Biaya untuk seluruh orderQuantity
+  totalAccessoriesCostPerUnit?: number; // Subtotal Biaya Aksesoris per pcs
+  totalServicesCostPerUnit?: number; // Subtotal Biaya Jasa per pcs
+  totalAccessoriesBatchCost?: number; // Subtotal Biaya Aksesoris batch
+  totalServicesBatchCost?: number; // Subtotal Biaya Jasa batch
   targetMarkupPercent?: number; // Margin keuntungan (%)
   targetSellingPricePerUnit?: number; // Estimasi harga jual rekomendasi per unit
   calculationDate: string;

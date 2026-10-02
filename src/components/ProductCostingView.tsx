@@ -1,6 +1,15 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Product, Accessory, RawMaterial, ProductCostingItem, ProductCostingRecord } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import {
+  Product,
+  Accessory,
+  RawMaterial,
+  ProductCostingItem,
+  ProductCostingRecord,
+  AccessoryCategory,
+} from '../types';
 import { storageService } from '../services/storageService';
+import { companyProfile } from '../data/defaultData';
+import { jsPDF } from 'jspdf';
 import {
   Coins,
   Package,
@@ -10,7 +19,6 @@ import {
   Trash2,
   Save,
   FileSpreadsheet,
-  Printer,
   Download,
   FileText,
   RotateCcw,
@@ -21,14 +29,13 @@ import {
   ArrowRight,
   Boxes,
   HelpCircle,
-  Copy,
   FolderOpen,
-  Scissors,
-  X,
+  PlusCircle,
   RotateCw,
-  PlusCircle
+  X,
+  Scissors,
+  Wrench
 } from 'lucide-react';
-import jsPDF from 'jspdf';
 
 interface ProductCostingViewProps {
   products: Product[];
@@ -45,23 +52,11 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   initialProductId,
   onNavigateToConsumption,
 }) => {
-  const companyProfile = storageService.getCompanyProfile();
-
-  // Active view: 'calculator' | 'saved'
+  // Navigation sub-tab inside Product Costing: 'calculator' | 'saved'
   const [costingSubTab, setCostingSubTab] = useState<'calculator' | 'saved'>('calculator');
-
-  // Saved Costings
   const [savedCostings, setSavedCostings] = useState<ProductCostingRecord[]>(() =>
     storageService.getProductCostings()
   );
-
-  // Active Costing ID if loaded or previously saved
-  const [activeCostingId, setActiveCostingId] = useState<string | null>(null);
-
-  // Modal Pilihan Penyimpanan (Menimpa vs Nama Baru)
-  const [isSaveChoiceModalOpen, setIsSaveChoiceModalOpen] = useState<boolean>(false);
-  const [newSaveCostingNumber, setNewSaveCostingNumber] = useState<string>('');
-  const [newSaveCostingTitle, setNewSaveCostingTitle] = useState<string>('');
 
   // Form states
   const [selectedProductId, setSelectedProductId] = useState<string>(
@@ -75,11 +70,12 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
       setSelectedProductId(initialProductId);
     }
   }, [initialProductId, products]);
+
   const [orderQuantity, setOrderQuantity] = useState<number>(1000);
   const [costingNumber, setCostingNumber] = useState<string>(
     `CST-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`
   );
-  const [title, setTitle] = useState<string>('Analisis HPP & Biaya Accessories');
+  const [title, setTitle] = useState<string>('Analisis HPP Accessories & Jasa');
   const [buyerName, setBuyerName] = useState<string>(
     companyProfile.defaultBuyerName || 'MABES TNI / KEMHAN RI'
   );
@@ -87,26 +83,42 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     new Date().toISOString().split('T')[0]
   );
   const [notes, setNotes] = useState<string>(
-    'Estimasi biaya komponen accessories berdasarkan harga beli langsung dan yield bahan baku.'
+    'Estimasi biaya komponen accessories dan ongkos jasa pengerjaan untuk penentuan HPP.'
   );
 
   // Markup & Profit Margin Simulator
   const [targetMarkupPercent, setTargetMarkupPercent] = useState<number>(25);
 
-  // Costing Items currently in table
+  // Costing Items currently in table (contains both accessories and services)
   const [costingItems, setCostingItems] = useState<ProductCostingItem[]>([]);
 
   // Modal / Feedback notification
   const [notice, setNotice] = useState<string | null>(null);
 
-  // Helper to compute accessory price from Master Accessories & Raw Materials
+  // ID dari dokumen costing yang sedang aktif dimuat (jika ada)
+  const [activeCostingId, setActiveCostingId] = useState<string | null>(null);
+
+  // State untuk Modal Pilihan Penyimpanan (Overwrite vs Buat Baru)
+  const [isSaveChoiceModalOpen, setIsSaveChoiceModalOpen] = useState(false);
+  const [newSaveCostingNumber, setNewSaveCostingNumber] = useState('');
+  const [newSaveCostingTitle, setNewSaveCostingTitle] = useState('');
+
+  // State untuk Tambah Jasa Kustom Modal / Form
+  const [isCustomServiceModalOpen, setIsCustomServiceModalOpen] = useState(false);
+  const [customServiceName, setCustomServiceName] = useState('');
+  const [customServicePrice, setCustomServicePrice] = useState<number>(10000);
+  const [customServiceQty, setCustomServiceQty] = useState<number>(1);
+  const [customServiceUnit, setCustomServiceUnit] = useState('pcs');
+
+  // Helper to compute accessory or service price from Master Accessories & Raw Materials
   const getAccessoryPriceInfo = (acc: Accessory) => {
-    if (acc.category === 'ready_made') {
+    if (acc.category === 'ready_made' || acc.category === 'service') {
       const price = acc.purchasePrice || 0;
+      const isService = acc.category === 'service';
       return {
         unitPrice: price,
-        sourceLabel: 'Beli Jadi (Langsung)',
-        detailText: `Rp ${price.toLocaleString('id-ID')} / ${acc.unit}`,
+        sourceLabel: isService ? 'Tarif Jasa Pengerjaan' : 'Beli Jadi (Langsung)',
+        detailText: isService ? `Tarif Rp ${price.toLocaleString('id-ID')} / ${acc.unit}` : `Rp ${price.toLocaleString('id-ID')} / ${acc.unit}`,
         rawMaterialName: '-',
         rawMaterialUnitPrice: 0,
         yieldPerUnit: 1,
@@ -191,14 +203,40 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     });
   }, [costingItems, orderQuantity]);
 
-  // Financial Summaries
-  const totalCostPerUnit = useMemo(() => {
-    return updatedItems.reduce((acc, item) => acc + item.totalCostPerProduct, 0);
+  // Separate Accessories vs Services
+  const accessoryItems = useMemo(() => {
+    return updatedItems.filter((i) => i.accessoryCategory !== 'service');
   }, [updatedItems]);
 
+  const serviceItems = useMemo(() => {
+    return updatedItems.filter((i) => i.accessoryCategory === 'service');
+  }, [updatedItems]);
+
+  // Subtotals
+  const totalAccessoriesCostPerUnit = useMemo(() => {
+    return accessoryItems.reduce((acc, item) => acc + item.totalCostPerProduct, 0);
+  }, [accessoryItems]);
+
+  const totalAccessoriesBatchCost = useMemo(() => {
+    return totalAccessoriesCostPerUnit * orderQuantity;
+  }, [totalAccessoriesCostPerUnit, orderQuantity]);
+
+  const totalServicesCostPerUnit = useMemo(() => {
+    return serviceItems.reduce((acc, item) => acc + item.totalCostPerProduct, 0);
+  }, [serviceItems]);
+
+  const totalServicesBatchCost = useMemo(() => {
+    return totalServicesCostPerUnit * orderQuantity;
+  }, [totalServicesCostPerUnit, orderQuantity]);
+
+  // Grand Total HPP (Costing)
+  const totalCostPerUnit = useMemo(() => {
+    return totalAccessoriesCostPerUnit + totalServicesCostPerUnit;
+  }, [totalAccessoriesCostPerUnit, totalServicesCostPerUnit]);
+
   const totalBatchCost = useMemo(() => {
-    return totalCostPerUnit * orderQuantity;
-  }, [totalCostPerUnit, orderQuantity]);
+    return totalAccessoriesBatchCost + totalServicesBatchCost;
+  }, [totalAccessoriesBatchCost, totalServicesBatchCost]);
 
   // Breakdown by category
   const readyMadeCostPerUnit = useMemo(() => {
@@ -222,7 +260,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   const estimatedProfitPerUnit = recommendedSellingPricePerUnit - totalCostPerUnit;
   const estimatedTotalProfitBatch = estimatedProfitPerUnit * orderQuantity;
 
-  // Handlers for modifying table rows
+  // Handlers for modifying table rows (both accessories and services)
   const handleUpdateItemQty = (accessoryId: string, qty: number) => {
     setCostingItems((prev) =>
       prev.map((item) =>
@@ -262,7 +300,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     if (!acc) return;
 
     if (costingItems.some((i) => i.accessoryId === acc.id)) {
-      setNotice(`Aksesoris "${acc.name}" sudah ada di dalam tabel costing.`);
+      setNotice(`Komponen "${acc.name}" sudah ada di dalam tabel costing.`);
       setTimeout(() => setNotice(null), 3000);
       return;
     }
@@ -290,7 +328,78 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
 
     setCostingItems((prev) => [...prev, newItem]);
     setSelectedAccToAdd('');
-    setNotice(`Aksesoris "${acc.name}" berhasil ditambahkan ke costing!`);
+    setNotice(`Komponen "${acc.name}" berhasil ditambahkan ke costing!`);
+    setTimeout(() => setNotice(null), 3000);
+  };
+
+  // Add service from master dropdown
+  const [selectedServiceToAdd, setSelectedServiceToAdd] = useState<string>('');
+
+  const handleAddServiceFromMaster = () => {
+    if (!selectedServiceToAdd) return;
+    const srv = accessories.find((a) => a.id === selectedServiceToAdd);
+    if (!srv) return;
+
+    if (costingItems.some((i) => i.accessoryId === srv.id)) {
+      setNotice(`Jasa "${srv.name}" sudah ada di dalam rincian costing.`);
+      setTimeout(() => setNotice(null), 3000);
+      return;
+    }
+
+    const price = srv.purchasePrice || 0;
+    const usageQtyPerProduct = 1;
+    const totalUsageQty = usageQtyPerProduct * orderQuantity;
+    const totalCostPerProduct = usageQtyPerProduct * price;
+    const totalCostBatch = totalUsageQty * price;
+
+    const newItem: ProductCostingItem = {
+      accessoryId: srv.id,
+      accessoryName: srv.name,
+      accessoryCategory: 'service',
+      unitPrice: price,
+      usageQtyPerProduct,
+      totalUsageQty,
+      totalCostPerProduct,
+      totalCostBatch,
+      notes: srv.notes || `Tarif Rp ${price.toLocaleString('id-ID')} / ${srv.unit}`,
+    };
+
+    setCostingItems((prev) => [...prev, newItem]);
+    setSelectedServiceToAdd('');
+    setNotice(`Jasa "${srv.name}" berhasil ditambahkan ke costing!`);
+    setTimeout(() => setNotice(null), 3000);
+  };
+
+  // Add custom service
+  const handleAddCustomService = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customServiceName.trim()) return;
+
+    const newId = `jasa-custom-${Date.now()}`;
+    const price = Number(customServicePrice) || 0;
+    const qty = Number(customServiceQty) || 1;
+    const totalUsageQty = qty * orderQuantity;
+    const totalCostPerProduct = qty * price;
+    const totalCostBatch = totalUsageQty * price;
+
+    const newItem: ProductCostingItem = {
+      accessoryId: newId,
+      accessoryName: customServiceName.trim(),
+      accessoryCategory: 'service',
+      unitPrice: price,
+      usageQtyPerProduct: qty,
+      totalUsageQty,
+      totalCostPerProduct,
+      totalCostBatch,
+      notes: `Jasa Pengerjaan (${customServiceUnit})`,
+    };
+
+    setCostingItems((prev) => [...prev, newItem]);
+    setCustomServiceName('');
+    setCustomServicePrice(10000);
+    setCustomServiceQty(1);
+    setIsCustomServiceModalOpen(false);
+    setNotice(`Jasa kustom "${newItem.accessoryName}" berhasil ditambahkan!`);
     setTimeout(() => setNotice(null), 3000);
   };
 
@@ -325,6 +434,10 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
       items: updatedItems,
       totalCostPerUnit,
       totalBatchCost,
+      totalAccessoriesCostPerUnit,
+      totalServicesCostPerUnit,
+      totalAccessoriesBatchCost,
+      totalServicesBatchCost,
       targetMarkupPercent,
       targetSellingPricePerUnit: recommendedSellingPricePerUnit,
       calculationDate,
@@ -365,6 +478,10 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
       items: updatedItems,
       totalCostPerUnit,
       totalBatchCost,
+      totalAccessoriesCostPerUnit,
+      totalServicesCostPerUnit,
+      totalAccessoriesBatchCost,
+      totalServicesBatchCost,
       targetMarkupPercent,
       targetSellingPricePerUnit: recommendedSellingPricePerUnit,
       calculationDate,
@@ -409,7 +526,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   // Export to CSV
   const handleExportCsv = () => {
     let csv = 'data:text/csv;charset=utf-8,';
-    csv += `LAPORAN PRODUCT COSTING & HPP ACCESSORIES\n`;
+    csv += `LAPORAN PRODUCT COSTING (HPP ACCESSORIES & JASA)\n`;
     csv += `Perusahaan,${companyProfile.companyName || 'PT. GARMENT PRESISI NUSANTARA'}\n`;
     csv += `No Dokumen Costing,${costingNumber}\n`;
     csv += `Nama Produk,${currentProduct?.name}\n`;
@@ -417,15 +534,26 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     csv += `Jumlah Pesanan,${orderQuantity} Pcs\n`;
     csv += `Tanggal,${calculationDate}\n\n`;
 
+    csv += `1. RINCIAN KOMPONEN ACCESSORIES\n`;
     csv += `No,Nama Accessories,Kategori,Sumber / Yield,Harga Satuan (Rp),Pemakaian / Pcs,Total Pemakaian (Pcs),Total Biaya / Pcs (Rp),Total Biaya Batch (Rp)\n`;
-    updatedItems.forEach((item, idx) => {
+    accessoryItems.forEach((item, idx) => {
       csv += `${idx + 1},"${item.accessoryName}","${item.accessoryCategory === 'ready_made' ? 'Accessories Jadi' : 'Olah Bahan Baku'}","${item.notes || '-'}",${item.unitPrice.toFixed(2)},${item.usageQtyPerProduct},${item.totalUsageQty},${item.totalCostPerProduct.toFixed(2)},${item.totalCostBatch.toFixed(2)}\n`;
     });
+    csv += `Subtotal Biaya Accessories,,,,,,"Rp ${totalAccessoriesCostPerUnit.toFixed(2)}","Rp ${totalAccessoriesBatchCost.toFixed(2)}"\n\n`;
 
-    csv += `\nRINGKASAN BIAYA\n`;
-    csv += `Total Cost Accessories / Pcs,Rp ${totalCostPerUnit.toFixed(2)}\n`;
+    csv += `2. RINCIAN BIAYA JASA & ONGKOS PENGERJAAN\n`;
+    csv += `No,Nama Jasa,Kategori,Keterangan,Tarif Satuan (Rp),Jumlah Pengerjaan / Pcs,Total Pengerjaan Batch,Total Biaya Jasa / Pcs (Rp),Total Biaya Jasa Batch (Rp)\n`;
+    serviceItems.forEach((item, idx) => {
+      csv += `${idx + 1},"${item.accessoryName}","Jasa Pengerjaan","${item.notes || '-'}",${item.unitPrice.toFixed(2)},${item.usageQtyPerProduct},${item.totalUsageQty},${item.totalCostPerProduct.toFixed(2)},${item.totalCostBatch.toFixed(2)}\n`;
+    });
+    csv += `Subtotal Biaya Jasa,,,,,,"Rp ${totalServicesCostPerUnit.toFixed(2)}","Rp ${totalServicesBatchCost.toFixed(2)}"\n\n`;
+
+    csv += `RINGKASAN REKAPITULASI HPP & LABA\n`;
+    csv += `Subtotal Biaya Accessories / Pcs,Rp ${totalAccessoriesCostPerUnit.toFixed(2)}\n`;
+    csv += `Subtotal Biaya Jasa / Pcs,Rp ${totalServicesCostPerUnit.toFixed(2)}\n`;
+    csv += `GRAND TOTAL HPP / Pcs,Rp ${totalCostPerUnit.toFixed(2)}\n`;
     csv += `Total Biaya Batch (${orderQuantity} Pcs),Rp ${totalBatchCost.toFixed(2)}\n`;
-    csv += `Target Markup,${targetMarkupPercent}%\n`;
+    csv += `Target Markup Keuntungan,${targetMarkupPercent}%\n`;
     csv += `Rekomendasi Harga Jual / Pcs,Rp ${recommendedSellingPricePerUnit.toFixed(2)}\n`;
     csv += `Estimasi Laba Kotor Batch,Rp ${estimatedTotalProfitBatch.toFixed(2)}\n`;
 
@@ -451,123 +579,194 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
 
     // Header Letterhead
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(14);
+    pdf.setFontSize(13);
     pdf.setTextColor(20, 30, 60);
     pdf.text(companyProfile.companyName || 'PT. GARMENT PRESISI NUSANTARA', margin, y);
     y += 5;
 
-    pdf.setFontSize(10);
+    pdf.setFontSize(9.5);
     pdf.setTextColor(80, 80, 80);
-    pdf.text('DIVISI KOPELRIEM • LEMBAR PRODUCT COSTING & HPP ACCESSORIES', margin, y);
+    pdf.text('LEMBAR PRODUCT COSTING • HPP KOMPONEN ACCESSORIES & BIAYA JASA', margin, y);
     y += 4;
     pdf.setDrawColor(20, 30, 60);
     pdf.setLineWidth(0.6);
     pdf.line(margin, y, 210 - margin, y);
-    y += 8;
+    y += 7;
 
     // Document Meta
-    pdf.setFontSize(9);
+    pdf.setFontSize(8.5);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(60, 60, 60);
     pdf.text(`No Dokumen : ${costingNumber}`, margin, y);
     pdf.text(`Tanggal : ${calculationDate}`, 130, y);
-    y += 5;
+    y += 4.5;
     pdf.text(`Produk : ${currentProduct?.name} (${currentProduct?.code})`, margin, y);
     pdf.text(`Jumlah Pesanan : ${orderQuantity.toLocaleString('id-ID')} Pcs`, 130, y);
-    y += 5;
+    y += 4.5;
     pdf.text(`Buyer / Pemesan : ${buyerName}`, margin, y);
-    y += 8;
-
-    // Table Header
-    pdf.setFillColor(240, 245, 250);
-    pdf.rect(margin, y, 180, 7, 'F');
-    pdf.setDrawColor(180, 190, 205);
-    pdf.rect(margin, y, 180, 7);
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(8);
-    pdf.setTextColor(30, 40, 70);
-    pdf.text('No', margin + 2, y + 5);
-    pdf.text('Nama Accessories', margin + 10, y + 5);
-    pdf.text('Kategori', margin + 65, y + 5);
-    pdf.text('Harga Satuan', margin + 98, y + 5);
-    pdf.text('Qty/Pcs', margin + 128, y + 5);
-    pdf.text('Cost / Pcs', margin + 152, y + 5);
     y += 7;
 
-    // Table Rows
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8);
-    pdf.setTextColor(30, 30, 30);
-
-    updatedItems.forEach((item, idx) => {
-      if (y > 260) {
-        pdf.addPage();
-        y = 20;
-      }
-
-      pdf.setDrawColor(230, 235, 240);
-      pdf.line(margin, y + 6, margin + 180, y + 6);
-
-      pdf.text(String(idx + 1), margin + 2, y + 4.5);
-      pdf.text(item.accessoryName.slice(0, 30), margin + 10, y + 4.5);
-      pdf.text(item.accessoryCategory === 'ready_made' ? 'Beli Jadi' : 'Olah Bahan', margin + 65, y + 4.5);
-      pdf.text(`Rp ${item.unitPrice.toLocaleString('id-ID', { maximumFractionDigits: 1 })}`, margin + 98, y + 4.5);
-      pdf.text(`${item.usageQtyPerProduct} buah`, margin + 128, y + 4.5);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(`Rp ${item.totalCostPerProduct.toLocaleString('id-ID', { maximumFractionDigits: 1 })}`, margin + 152, y + 4.5);
-      pdf.setFont('helvetica', 'normal');
-
-      y += 7;
-    });
-
-    y += 5;
-    if (y > 240) {
-      pdf.addPage();
-      y = 20;
-    }
-
-    // Summary Box
-    pdf.setFillColor(248, 250, 252);
-    pdf.rect(margin, y, 180, 28, 'F');
-    pdf.setDrawColor(200, 210, 220);
-    pdf.rect(margin, y, 180, 28);
-
+    // SECTION 1: TABEL ACCESSORIES
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(9);
-    pdf.setTextColor(20, 30, 70);
-    pdf.text('RINGKASAN BIAYA PRODUKSI (HPP ACCESSORIES):', margin + 4, y + 6);
+    pdf.setTextColor(30, 40, 70);
+    pdf.text('1. RINCIAN KOMPONEN ACCESSORIES', margin, y);
+    y += 3.5;
 
+    pdf.setFillColor(240, 245, 250);
+    pdf.rect(margin, y, 180, 6, 'F');
+    pdf.setDrawColor(180, 190, 205);
+    pdf.rect(margin, y, 180, 6);
+
+    pdf.setFontSize(7.5);
+    pdf.text('No', margin + 2, y + 4.2);
+    pdf.text('Nama Accessories', margin + 10, y + 4.2);
+    pdf.text('Kategori', margin + 70, y + 4.2);
+    pdf.text('Harga Satuan', margin + 100, y + 4.2);
+    pdf.text('Qty/Pcs', margin + 130, y + 4.2);
+    pdf.text('Cost / Pcs', margin + 155, y + 4.2);
+    y += 6;
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(30, 30, 30);
+
+    if (accessoryItems.length === 0) {
+      pdf.text('Tidak ada komponen accessories', margin + 10, y + 4.5);
+      y += 6;
+    } else {
+      accessoryItems.forEach((item, idx) => {
+        if (y > 265) {
+          pdf.addPage();
+          y = 18;
+        }
+        pdf.setDrawColor(230, 235, 240);
+        pdf.line(margin, y + 5, margin + 180, y + 5);
+
+        pdf.text(String(idx + 1), margin + 2, y + 3.8);
+        pdf.text(item.accessoryName.slice(0, 32), margin + 10, y + 3.8);
+        pdf.text(item.accessoryCategory === 'ready_made' ? 'Beli Jadi' : 'Olah Bahan', margin + 70, y + 3.8);
+        pdf.text(`Rp ${item.unitPrice.toLocaleString('id-ID', { maximumFractionDigits: 1 })}`, margin + 100, y + 3.8);
+        pdf.text(`${item.usageQtyPerProduct}`, margin + 130, y + 3.8);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(`Rp ${item.totalCostPerProduct.toLocaleString('id-ID', { maximumFractionDigits: 1 })}`, margin + 155, y + 3.8);
+        pdf.setFont('helvetica', 'normal');
+        y += 5.5;
+      });
+    }
+
+    // Subtotal Accessories
+    pdf.setFillColor(245, 247, 250);
+    pdf.rect(margin, y, 180, 5.5, 'F');
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Subtotal Biaya Accessories / Pcs:', margin + 80, y + 3.8);
+    pdf.text(`Rp ${totalAccessoriesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 155, y + 3.8);
+    y += 8.5;
+
+    // SECTION 2: TABEL JASA
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(9);
+    pdf.setTextColor(30, 40, 70);
+    pdf.text('2. RINCIAN BIAYA JASA & ONGKOS PENGERJAAN', margin, y);
+    y += 3.5;
+
+    pdf.setFillColor(238, 242, 255);
+    pdf.rect(margin, y, 180, 6, 'F');
+    pdf.setDrawColor(199, 210, 254);
+    pdf.rect(margin, y, 180, 6);
+
+    pdf.setFontSize(7.5);
+    pdf.text('No', margin + 2, y + 4.2);
+    pdf.text('Nama Jasa / Biaya Pengerjaan', margin + 10, y + 4.2);
+    pdf.text('Keterangan', margin + 70, y + 4.2);
+    pdf.text('Tarif / Satuan', margin + 100, y + 4.2);
+    pdf.text('Qty / Pcs', margin + 130, y + 4.2);
+    pdf.text('Biaya Jasa / Pcs', margin + 155, y + 4.2);
+    y += 6;
+
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(7.5);
+    pdf.setTextColor(30, 30, 30);
+
+    if (serviceItems.length === 0) {
+      pdf.text('Tidak ada biaya jasa yang ditambahkan', margin + 10, y + 4.5);
+      y += 6;
+    } else {
+      serviceItems.forEach((item, idx) => {
+        if (y > 265) {
+          pdf.addPage();
+          y = 18;
+        }
+        pdf.setDrawColor(230, 235, 240);
+        pdf.line(margin, y + 5, margin + 180, y + 5);
+
+        pdf.text(String(idx + 1), margin + 2, y + 3.8);
+        pdf.text(item.accessoryName.slice(0, 32), margin + 10, y + 3.8);
+        pdf.text((item.notes || 'Jasa Pengerjaan').slice(0, 22), margin + 70, y + 3.8);
+        pdf.text(`Rp ${item.unitPrice.toLocaleString('id-ID', { maximumFractionDigits: 1 })}`, margin + 100, y + 3.8);
+        pdf.text(`${item.usageQtyPerProduct}`, margin + 130, y + 3.8);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(`Rp ${item.totalCostPerProduct.toLocaleString('id-ID', { maximumFractionDigits: 1 })}`, margin + 155, y + 3.8);
+        pdf.setFont('helvetica', 'normal');
+        y += 5.5;
+      });
+    }
+
+    // Subtotal Jasa
+    pdf.setFillColor(238, 242, 255);
+    pdf.rect(margin, y, 180, 5.5, 'F');
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Subtotal Biaya Jasa / Pcs:', margin + 80, y + 3.8);
+    pdf.text(`Rp ${totalServicesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 155, y + 3.8);
+    y += 9;
+
+    if (y > 240) {
+      pdf.addPage();
+      y = 18;
+    }
+
+    // GRAND TOTAL SUMMARY BOX
+    pdf.setFillColor(254, 252, 232);
+    pdf.rect(margin, y, 180, 32, 'F');
+    pdf.setDrawColor(250, 204, 21);
+    pdf.rect(margin, y, 180, 32);
+
+    pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(8.5);
-    pdf.setFont('helvetica', 'normal');
-    pdf.text(`Total Biaya Accessories / Pcs Produk:`, margin + 4, y + 13);
-    pdf.setFont('helvetica', 'bold');
-    pdf.text(`Rp ${totalCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / Pcs`, margin + 115, y + 13);
+    pdf.setTextColor(113, 63, 18);
+    pdf.text('REKAPITULASI HPP & SIMULATOR HARGA JUAL:', margin + 4, y + 5.5);
 
+    pdf.setFontSize(8);
     pdf.setFont('helvetica', 'normal');
-    pdf.text(`Total Biaya Batch (${orderQuantity.toLocaleString('id-ID')} Pcs):`, margin + 4, y + 19);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(15, 80, 40);
-    pdf.text(`Rp ${totalBatchCost.toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`, margin + 115, y + 19);
+    pdf.setTextColor(50, 50, 50);
+    pdf.text(`Subtotal Accessories / Pcs: Rp ${totalAccessoriesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2 })}`, margin + 4, y + 11.5);
+    pdf.text(`Subtotal Jasa / Pcs: Rp ${totalServicesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2 })}`, margin + 95, y + 11.5);
 
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(60, 60, 60);
-    pdf.text(`Rekomendasi Harga Jual (Markup ${targetMarkupPercent}%):`, margin + 4, y + 25);
     pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(180, 70, 10);
-    pdf.text(`Rp ${recommendedSellingPricePerUnit.toLocaleString('id-ID', { maximumFractionDigits: 0 })} / Pcs`, margin + 115, y + 25);
+    pdf.setTextColor(20, 30, 70);
+    pdf.text(`GRAND TOTAL HPP / Pcs:`, margin + 4, y + 17.5);
+    pdf.text(`Rp ${totalCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 50, y + 17.5);
 
-    y += 35;
+    pdf.text(`Total Biaya Batch (${orderQuantity.toLocaleString('id-ID')} Pcs):`, margin + 95, y + 17.5);
+    pdf.text(`Rp ${totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`, margin + 148, y + 17.5);
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(180, 83, 9);
+    pdf.text(`Rekomendasi Harga Jual (Target Margin ${targetMarkupPercent}%):`, margin + 4, y + 24.5);
+    pdf.setFontSize(9.5);
+    pdf.text(`Rp ${recommendedSellingPricePerUnit.toLocaleString('id-ID', { maximumFractionDigits: 0 })} / Pcs`, margin + 95, y + 24.5);
+
+    y += 40;
 
     // Signatures
     pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8);
+    pdf.setFontSize(7.5);
     pdf.setTextColor(80, 80, 80);
     pdf.text('Dibuat Oleh (Cost Estimator):', margin + 10, y);
     pdf.text('Diperiksa (Bag. Keuangan):', margin + 70, y);
     pdf.text('Disetujui (Pimpinan):', margin + 130, y);
 
-    y += 18;
+    y += 16;
     pdf.setDrawColor(160, 160, 160);
     pdf.line(margin + 5, y, margin + 50, y);
     pdf.line(margin + 65, y, margin + 110, y);
@@ -583,6 +782,15 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     setTimeout(() => setNotice(null), 3500);
   };
 
+  // Master lists filtered
+  const masterAccessoriesList = useMemo(() => {
+    return accessories.filter((a) => a.category !== 'service');
+  }, [accessories]);
+
+  const masterServicesList = useMemo(() => {
+    return accessories.filter((a) => a.category === 'service');
+  }, [accessories]);
+
   return (
     <div className="space-y-6">
       {/* Top Banner Header */}
@@ -595,11 +803,11 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
             <div className="flex items-center gap-2">
               <h2 className="text-base font-bold text-slate-900">Modul Product Costing</h2>
               <span className="rounded-full bg-amber-100 text-amber-800 px-2.5 py-0.5 text-[10px] font-black uppercase">
-                HPP & Biaya Produk
+                HPP Accessories & Jasa
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Kalkulasi biaya komponen accessories dari Modul Consumption untuk menentukan Harga Pokok Produksi (HPP) & rekomendasi harga jual
+              Kalkulasi HPP terintegrasi: komponen accessories (beli jadi & olah bahan baku) serta ongkos jasa pengerjaan (jahit, bordir, cutting, finishing)
             </p>
           </div>
         </div>
@@ -672,7 +880,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
             <div className="p-12 text-center text-slate-400 text-xs">
               <Coins className="w-10 h-10 mx-auto text-slate-300 mb-2" />
               <p className="font-semibold text-slate-600">Belum ada arsip costing tersimpan</p>
-              <p className="mt-1">Lakukan kalkulasi di tab Kalkulator Costing dan klik tombol "Simpan Costing"</p>
+              <p className="mt-1">Lakukan kalkulasi di tab Kalkulator Costing dan klik tombol "Simpan Kalkulasi Costing"</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -682,50 +890,63 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                     <th className="py-3 px-4 font-bold">No Dokumen</th>
                     <th className="py-3 px-4 font-bold">Nama Produk & Judul</th>
                     <th className="py-3 px-4 font-bold text-center">Batch Qty</th>
-                    <th className="py-3 px-4 font-bold text-right">Cost / Pcs</th>
-                    <th className="py-3 px-4 font-bold text-right">Total Biaya Batch</th>
+                    <th className="py-3 px-4 font-bold text-right">Biaya Accessories</th>
+                    <th className="py-3 px-4 font-bold text-right">Biaya Jasa</th>
+                    <th className="py-3 px-4 font-bold text-right">Grand Total HPP</th>
+                    <th className="py-3 px-4 font-bold text-right">Total Batch</th>
                     <th className="py-3 px-4 font-bold">Tanggal</th>
                     <th className="py-3 px-4 font-bold text-center">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {savedCostings.map((rec) => (
-                    <tr key={rec.id} className="hover:bg-slate-50/60">
-                      <td className="py-3 px-4 font-mono font-bold text-blue-900">{rec.costingNumber}</td>
-                      <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900">{rec.productName}</div>
-                        <div className="text-[11px] text-slate-500 truncate max-w-[220px]">{rec.title}</div>
-                      </td>
-                      <td className="py-3 px-4 text-center font-mono font-semibold text-slate-700">
-                        {rec.orderQuantity.toLocaleString('id-ID')} Pcs
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
-                        Rp {rec.totalCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-black text-amber-900">
-                        Rp {rec.totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
-                      </td>
-                      <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">{rec.calculationDate}</td>
-                      <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => handleLoadSavedCosting(rec)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-blue-50 text-blue-800 hover:bg-blue-100 px-2 py-1 text-[11px] font-semibold transition"
-                            title="Buka & edit costing ini"
-                          >
-                            <span>Buka</span>
-                          </button>
-                          <button
-                            onClick={() => handleDeleteSavedCosting(rec.id)}
-                            className="rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
-                            title="Hapus arsip costing"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {savedCostings.map((rec) => {
+                    const accCost = rec.totalAccessoriesCostPerUnit ?? rec.items.filter(i => i.accessoryCategory !== 'service').reduce((s, i) => s + i.totalCostPerProduct, 0);
+                    const srvCost = rec.totalServicesCostPerUnit ?? rec.items.filter(i => i.accessoryCategory === 'service').reduce((s, i) => s + i.totalCostPerProduct, 0);
+
+                    return (
+                      <tr key={rec.id} className="hover:bg-slate-50/60">
+                        <td className="py-3 px-4 font-mono font-bold text-blue-900">{rec.costingNumber}</td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">{rec.productName}</div>
+                          <div className="text-[11px] text-slate-500 truncate max-w-[200px]">{rec.title}</div>
+                        </td>
+                        <td className="py-3 px-4 text-center font-mono font-semibold text-slate-700">
+                          {rec.orderQuantity.toLocaleString('id-ID')} Pcs
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-slate-700">
+                          Rp {accCost.toLocaleString('id-ID', { maximumFractionDigits: 1 })}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono text-indigo-700 font-semibold">
+                          Rp {srvCost.toLocaleString('id-ID', { maximumFractionDigits: 1 })}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-black text-slate-900">
+                          Rp {rec.totalCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3 px-4 text-right font-mono font-black text-amber-900">
+                          Rp {rec.totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                        </td>
+                        <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">{rec.calculationDate}</td>
+                        <td className="py-3 px-4 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              onClick={() => handleLoadSavedCosting(rec)}
+                              className="inline-flex items-center gap-1 rounded-lg bg-blue-50 text-blue-800 hover:bg-blue-100 px-2 py-1 text-[11px] font-semibold transition"
+                              title="Buka & edit costing ini"
+                            >
+                              <span>Buka</span>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSavedCosting(rec.id)}
+                              className="rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
+                              title="Hapus arsip costing"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -761,19 +982,16 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                 >
                   {products.map((p) => (
                     <option key={p.id} value={p.id}>
-                      {p.name} ({p.code}) — {p.accessories?.length || 0} Aksesoris
+                      {p.name} ({p.code}) — {p.accessories?.length || 0} Komponen
                     </option>
                   ))}
                 </select>
-                <p className="text-[10px] text-slate-400">
-                  Kategori: <strong>{currentProduct?.category || '-'}</strong>
-                </p>
               </div>
 
               {/* Order Quantity */}
               <div className="md:col-span-3 space-y-1">
                 <label className="block font-semibold text-slate-700">
-                  Jumlah Pesanan (Batch Qty) <span className="text-rose-500">*</span>
+                  Jumlah Pesanan (Batch) <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <input
@@ -782,17 +1000,17 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                     step="1"
                     value={orderQuantity}
                     onChange={(e) => setOrderQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-900 font-bold font-mono outline-hidden focus:border-amber-600 text-xs"
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono font-bold text-slate-900 outline-hidden focus:border-amber-600 text-xs"
                   />
-                  <span className="absolute right-3 top-2 text-[11px] text-slate-400 font-medium">Pcs</span>
+                  <span className="absolute right-3 top-2 text-slate-400 font-semibold text-xs">Pcs</span>
                 </div>
                 <div className="flex gap-1.5 pt-1 text-[10px]">
                   <button
                     type="button"
-                    onClick={() => setOrderQuantity(1)}
+                    onClick={() => setOrderQuantity(100)}
                     className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium"
                   >
-                    1 Pcs
+                    100 Pcs
                   </button>
                   <button
                     type="button"
@@ -856,16 +1074,16 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
             </div>
           </div>
 
-          {/* Core Table: Rincian Nama Accessories, Harga, Jumlah Pemakaian, Total Cost */}
+          {/* TABEL 1: Rincian Komponen Accessories (Beli Jadi & Olahan Bahan Baku) */}
           <div className="rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden space-y-0">
             <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="text-xs font-bold text-slate-900 uppercase flex items-center gap-1.5">
                   <Coins className="w-4 h-4 text-amber-600" />
-                  <span>2. Rincian Pemakaian Accessories & Kalkulasi Total Harga (Cost)</span>
+                  <span>2. Rincian Komponen Accessories & Kalkulasi Harga (Cost)</span>
                 </h3>
                 <p className="text-[11px] text-slate-500 mt-0.5">
-                  Harga accessories diambil otomatis dari Master Accessories (Beli Jadi atau Harga Bahan Baku ÷ Yield)
+                  Harga accessories diambil otomatis dari Master Accessories (Beli Jadi atau Harga Bahan ÷ Yield)
                 </p>
               </div>
 
@@ -874,10 +1092,10 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                 <select
                   value={selectedAccToAdd}
                   onChange={(e) => setSelectedAccToAdd(e.target.value)}
-                  className="rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-hidden focus:border-amber-600 max-w-[200px]"
+                  className="rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-hidden focus:border-amber-600 max-w-[220px]"
                 >
                   <option value="">+ Pilih Aksesoris Tambahan...</option>
-                  {accessories.map((a) => (
+                  {masterAccessoriesList.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.name} ({a.category === 'ready_made' ? 'Beli Jadi' : 'Olah Bahan'})
                     </option>
@@ -918,14 +1136,14 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
-                  {updatedItems.length === 0 ? (
+                  {accessoryItems.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="py-8 text-center text-slate-400">
-                        Tidak ada accessories yang ditugaskan pada produk ini. Silakan klik "+ Tambah" diatas.
+                      <td colSpan={8} className="py-6 text-center text-slate-400">
+                        Tidak ada komponen accessories dalam kalkulasi ini. Silakan klik "+ Tambah" diatas.
                       </td>
                     </tr>
                   ) : (
-                    updatedItems.map((item, idx) => {
+                    accessoryItems.map((item, idx) => {
                       const isReady = item.accessoryCategory === 'ready_made';
 
                       return (
@@ -933,7 +1151,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                           {/* 1. No */}
                           <td className="py-3 px-3 text-center text-slate-400 font-mono">{idx + 1}</td>
 
-                          {/* 2. Nama Accessories (Ambil dari Nama Accessories Consumption) */}
+                          {/* 2. Nama Accessories */}
                           <td className="py-3 px-3">
                             <div className="font-bold text-slate-900">{item.accessoryName}</div>
                             <div className="text-[10px] text-slate-500 font-mono">{item.notes || '-'}</div>
@@ -954,7 +1172,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                             )}
                           </td>
 
-                          {/* 4. Harga Accessories (Ambil dari Master Accessories) */}
+                          {/* 4. Harga Accessories */}
                           <td className="py-3 px-3 text-right">
                             <div className="inline-flex items-center gap-1 justify-end">
                               <span className="text-[11px] text-slate-400">Rp</span>
@@ -969,7 +1187,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                               />
                             </div>
                             <div className="text-[10px] text-slate-400 mt-0.5">
-                              {isReady ? 'Harga Langsung' : 'Bahan Baku ÷ Yield'}
+                              {isReady ? 'Harga Beli' : 'Bahan ÷ Yield'}
                             </div>
                           </td>
 
@@ -1002,7 +1220,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                               Rp {item.totalCostPerProduct.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </div>
                             <div className="text-[10px] text-amber-800 font-mono">
-                              Total Batch: Rp {item.totalCostBatch.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                              Total: Rp {item.totalCostBatch.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                             </div>
                           </td>
 
@@ -1021,14 +1239,190 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                     })
                   )}
                 </tbody>
-                {/* Table Footer with Summary */}
+                {/* Table Footer with Subtotal Accessories */}
                 <tfoot>
                   <tr className="border-t-2 border-slate-300 bg-slate-100 font-bold text-slate-900">
-                    <td colSpan={6} className="py-3 px-4 text-right uppercase text-xs">
-                      Total Harga (Cost) Accessories per 1 Pcs Produk:
+                    <td colSpan={6} className="py-2.5 px-4 text-right uppercase text-xs">
+                      Subtotal Biaya Accessories / Pcs Produk:
                     </td>
-                    <td className="py-3 px-3 text-right font-mono font-black text-amber-950 text-base bg-amber-100/60">
-                      Rp {totalCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    <td className="py-2.5 px-3 text-right font-mono font-black text-amber-950 text-sm bg-amber-100/60">
+                      Rp {totalAccessoriesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          {/* TABEL 2: Rincian Jasa & Biaya Pengerjaan (Jasa Jahit, Bordir, Cutting, Finishing) */}
+          <div className="rounded-2xl border border-indigo-200 bg-white shadow-xs overflow-hidden space-y-0">
+            <div className="p-4 border-b border-indigo-100 bg-indigo-50/70 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-xs font-bold text-indigo-950 uppercase flex items-center gap-1.5">
+                  <Scissors className="w-4 h-4 text-indigo-700" />
+                  <span>3. Rincian Biaya Jasa & Ongkos Pengerjaan (Jahit, Bordir, Finishing)</span>
+                </h3>
+                <p className="text-[11px] text-indigo-800 mt-0.5">
+                  Komponen jasa memiliki <strong>Nama Jasa</strong>, <strong>Tarif / Harga</strong>, dan <strong>Jumlah Pengerjaan per Pcs</strong>.
+                </p>
+              </div>
+
+              {/* Tambah Jasa Dropdown & Tombol Jasa Kustom */}
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={selectedServiceToAdd}
+                  onChange={(e) => setSelectedServiceToAdd(e.target.value)}
+                  className="rounded-xl border border-indigo-300 bg-white px-2.5 py-1.5 text-xs text-indigo-950 outline-hidden focus:border-indigo-600 max-w-[220px]"
+                >
+                  <option value="">+ Pilih Dari Master Jasa...</option>
+                  {masterServicesList.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} (Rp {(s.purchasePrice || 0).toLocaleString('id-ID')})
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleAddServiceFromMaster}
+                  disabled={!selectedServiceToAdd}
+                  className="inline-flex items-center gap-1 rounded-xl bg-indigo-700 hover:bg-indigo-800 disabled:opacity-40 px-3 py-1.5 text-xs font-bold text-white transition shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Tambah</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCustomServiceModalOpen(true)}
+                  className="inline-flex items-center gap-1 rounded-xl bg-white border border-indigo-300 hover:bg-indigo-100 px-3 py-1.5 text-xs font-bold text-indigo-900 transition shadow-2xs"
+                >
+                  <PlusCircle className="w-3.5 h-3.5 text-indigo-700" />
+                  <span>+ Jasa Kustom</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-indigo-100 bg-indigo-50/40 text-indigo-950">
+                    <th className="py-3 px-3 font-bold w-[4%] text-center">No</th>
+                    <th className="py-3 px-3 font-bold w-[26%]">Nama Jasa / Biaya Pengerjaan</th>
+                    <th className="py-3 px-3 font-bold w-[12%]">Kategori</th>
+                    <th className="py-3 px-3 font-bold text-right w-[16%]">
+                      Tarif / Harga Jasa (Rp)
+                    </th>
+                    <th className="py-3 px-3 font-bold text-center w-[12%]">
+                      Jumlah Pengerjaan / Pcs
+                    </th>
+                    <th className="py-3 px-3 font-bold text-right w-[13%]">
+                      Total Pengerjaan ({orderQuantity} Pcs)
+                    </th>
+                    <th className="py-3 px-3 font-bold text-right w-[17%] bg-indigo-50/80">
+                      Total Biaya Jasa / Pcs
+                    </th>
+                    <th className="py-3 px-2 font-bold text-center w-[4%]"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-indigo-100/70">
+                  {serviceItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-6 text-center text-slate-400">
+                        Belum ada biaya jasa yang ditambahkan. Silakan pilih dari Master Jasa atau klik "+ Jasa Kustom" diatas.
+                      </td>
+                    </tr>
+                  ) : (
+                    serviceItems.map((item, idx) => (
+                      <tr key={item.accessoryId} className="hover:bg-indigo-50/40">
+                        {/* 1. No */}
+                        <td className="py-3 px-3 text-center text-indigo-400 font-mono">{idx + 1}</td>
+
+                        {/* 2. Nama Jasa */}
+                        <td className="py-3 px-3">
+                          <div className="font-bold text-slate-900">{item.accessoryName}</div>
+                          <div className="text-[10px] text-indigo-600 font-mono">{item.notes || 'Ongkos Kerja'}</div>
+                        </td>
+
+                        {/* 3. Kategori */}
+                        <td className="py-3 px-3">
+                          <span className="inline-flex items-center gap-1 rounded-md bg-indigo-100/80 px-2 py-0.5 text-indigo-900 border border-indigo-200 font-semibold text-[10px]">
+                            <Scissors className="w-3 h-3 text-indigo-700" />
+                            <span>Jasa Kerja</span>
+                          </span>
+                        </td>
+
+                        {/* 4. Harga / Tarif Jasa (Editable) */}
+                        <td className="py-3 px-3 text-right">
+                          <div className="inline-flex items-center gap-1 justify-end">
+                            <span className="text-[11px] text-slate-400">Rp</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={item.unitPrice}
+                              onChange={(e) => handleUpdateItemPrice(item.accessoryId, parseFloat(e.target.value) || 0)}
+                              className="w-24 text-right rounded-lg border border-indigo-300 px-2 py-1 font-mono font-bold text-indigo-950 text-xs focus:border-indigo-600"
+                              title="Klik untuk mengubah tarif jasa manual khusus kalkulasi ini"
+                            />
+                          </div>
+                          <div className="text-[10px] text-indigo-600 mt-0.5 font-medium">Tarif Pengerjaan</div>
+                        </td>
+
+                        {/* 5. Jumlah Pengerjaan (Per 1 Pcs Produk) (Editable) */}
+                        <td className="py-3 px-3 text-center">
+                          <div className="inline-flex items-center justify-center gap-1">
+                            <input
+                              type="number"
+                              min="0.1"
+                              step="any"
+                              value={item.usageQtyPerProduct}
+                              onChange={(e) => handleUpdateItemQty(item.accessoryId, parseFloat(e.target.value) || 0)}
+                              className="w-16 text-center rounded-lg border border-indigo-300 px-1.5 py-1 font-mono font-bold text-indigo-950 text-xs focus:border-indigo-600"
+                            />
+                            <span className="text-[11px] text-indigo-700 font-medium">x pengerjaan</span>
+                          </div>
+                        </td>
+
+                        {/* 6. Total Pengerjaan Batch */}
+                        <td className="py-3 px-3 text-right font-mono font-bold text-indigo-950">
+                          <div>{item.totalUsageQty.toLocaleString('id-ID')} kali</div>
+                          <div className="text-[10px] text-slate-400 font-normal">
+                            {item.usageQtyPerProduct} × {orderQuantity.toLocaleString('id-ID')}
+                          </div>
+                        </td>
+
+                        {/* 7. Total Biaya Jasa / Pcs */}
+                        <td className="py-3 px-3 text-right bg-indigo-50/50">
+                          <div className="font-mono font-black text-indigo-950 text-sm">
+                            Rp {item.totalCostPerProduct.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                          <div className="text-[10px] text-indigo-800 font-mono">
+                            Total: Rp {item.totalCostBatch.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                          </div>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="py-3 px-2 text-center">
+                          <button
+                            onClick={() => handleDeleteItem(item.accessoryId)}
+                            className="p-1 rounded-lg text-slate-300 hover:text-rose-600 hover:bg-rose-50 transition"
+                            title="Hapus jasa ini dari kalkulasi costing"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+                {/* Table Footer with Subtotal Jasa */}
+                <tfoot>
+                  <tr className="border-t-2 border-indigo-200 bg-indigo-100/60 font-bold text-indigo-950">
+                    <td colSpan={6} className="py-2.5 px-4 text-right uppercase text-xs">
+                      Subtotal Biaya Jasa & Pengerjaan / Pcs Produk:
+                    </td>
+                    <td className="py-2.5 px-3 text-right font-mono font-black text-indigo-950 text-sm bg-indigo-200/50">
+                      Rp {totalServicesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
                     <td></td>
                   </tr>
@@ -1038,100 +1432,111 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
           </div>
 
           {/* Financial KPI Cards & Margin Simulator */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Card 1: HPP Accessories per Unit */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex flex-col justify-between">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* Card 1: Subtotal Biaya Aksesoris */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs flex flex-col justify-between">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Total HPP Aksesoris / Pcs Produk
+                  Subtotal Biaya Accessories / Pcs
                 </span>
-                <div className="mt-1 font-mono font-black text-2xl text-slate-900">
+                <div className="mt-1 font-mono font-black text-xl text-amber-950">
+                  Rp {totalAccessoriesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Komponen beli jadi dan olah bahan baku
+                </p>
+              </div>
+
+              <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
+                <span className="text-slate-500">Total Batch:</span>
+                <span className="font-mono font-bold text-amber-900">
+                  Rp {totalAccessoriesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            </div>
+
+            {/* Card 2: Subtotal Biaya Jasa */}
+            <div className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4 shadow-xs flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">
+                  Subtotal Biaya Jasa / Pcs
+                </span>
+                <div className="mt-1 font-mono font-black text-xl text-indigo-950">
+                  Rp {totalServicesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+                <p className="text-[10px] text-indigo-700 mt-1">
+                  Ongkos jahit, bordir, cutting & finishing
+                </p>
+              </div>
+
+              <div className="mt-3 pt-2 border-t border-indigo-100 flex items-center justify-between text-[11px]">
+                <span className="text-indigo-800">Total Batch:</span>
+                <span className="font-mono font-bold text-indigo-950">
+                  Rp {totalServicesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                </span>
+              </div>
+            </div>
+
+            {/* Card 3: Grand Total HPP Produk */}
+            <div className="rounded-2xl border-2 border-emerald-500 bg-emerald-50/50 p-4 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                    Grand Total HPP / Pcs
+                  </span>
+                  <span className="rounded-md bg-emerald-600 text-white px-1.5 py-0.2 text-[9px] font-bold">
+                    Costing
+                  </span>
+                </div>
+                <div className="mt-1 font-mono font-black text-2xl text-emerald-950">
                   Rp {totalCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </div>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Akumulasi seluruh komponen aksesoris untuk membuat 1 {currentProduct?.unit || 'Pcs'} {currentProduct?.name}
+                <p className="text-[10px] text-emerald-800 mt-1">
+                  Akumulasi HPP Accessories + Jasa untuk 1 Pcs Produk
                 </p>
               </div>
 
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span className="text-slate-500">Komponen Beli Jadi:</span>
-                <span className="font-mono font-bold text-emerald-700">
-                  Rp {readyMadeCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-              <div className="pt-1 flex items-center justify-between text-xs">
-                <span className="text-slate-500">Komponen Olah Bahan:</span>
-                <span className="font-mono font-bold text-purple-700">
-                  Rp {rawMaterialBasedCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2 })}
-                </span>
-              </div>
-            </div>
-
-            {/* Card 2: Total Biaya Batch Pesanan */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  Total Biaya Batch Pesanan ({orderQuantity.toLocaleString('id-ID')} Pcs)
-                </span>
-                <div className="mt-1 font-mono font-black text-2xl text-blue-950">
+              <div className="mt-3 pt-2 border-t border-emerald-200 flex items-center justify-between text-[11px]">
+                <span className="text-emerald-900 font-bold">Total Batch ({orderQuantity} Pcs):</span>
+                <span className="font-mono font-black text-emerald-950">
                   Rp {totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
-                </div>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Kebutuhan anggaran pembelian dan pemotongan bahan baku untuk volume pesanan {orderQuantity.toLocaleString('id-ID')} Pcs
-                </p>
-              </div>
-
-              <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span className="text-slate-500">Total Komponen Accessories:</span>
-                <span className="font-mono font-bold text-slate-800">
-                  {updatedItems.reduce((acc, i) => acc + i.totalUsageQty, 0).toLocaleString('id-ID')} buah
                 </span>
-              </div>
-              <div className="pt-1 flex items-center justify-between text-xs">
-                <span className="text-slate-500">Jumlah Jenis Aksesoris:</span>
-                <span className="font-mono font-bold text-slate-800">{updatedItems.length} jenis</span>
               </div>
             </div>
 
-            {/* Card 3: Simulator Margin & Harga Jual Rekomendasi */}
-            <div className="rounded-2xl border border-amber-300 bg-amber-50/50 p-5 shadow-xs flex flex-col justify-between">
+            {/* Card 4: Simulator Margin & Harga Jual Rekomendasi */}
+            <div className="rounded-2xl border border-amber-300 bg-amber-50/60 p-4 shadow-xs flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800">
-                    Simulator Margin & Harga Jual
+                    Simulator Margin
                   </span>
                   <div className="flex items-center gap-1">
-                    <span className="text-[11px] font-bold text-amber-900">Markup:</span>
+                    <span className="text-[10px] font-bold text-amber-900">Markup:</span>
                     <input
                       type="number"
                       min="0"
                       max="200"
                       value={targetMarkupPercent}
                       onChange={(e) => setTargetMarkupPercent(parseFloat(e.target.value) || 0)}
-                      className="w-14 rounded-lg border border-amber-400 bg-white px-1.5 py-0.5 text-center font-mono font-bold text-xs text-amber-950 outline-hidden"
+                      className="w-12 rounded-lg border border-amber-400 bg-white px-1 py-0.5 text-center font-mono font-bold text-xs text-amber-950 outline-hidden"
                     />
                     <span className="text-xs font-bold text-amber-900">%</span>
                   </div>
                 </div>
 
-                <div className="mt-2 font-mono font-black text-2xl text-amber-950">
+                <div className="mt-1 font-mono font-black text-xl text-amber-950">
                   Rp {recommendedSellingPricePerUnit.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
-                  <span className="text-xs font-normal text-amber-800"> / Pcs</span>
+                  <span className="text-[11px] font-normal text-amber-800"> / Pcs</span>
                 </div>
                 <p className="text-[10px] text-amber-800 mt-0.5">
-                  Estimasi harga jual per produk dengan target keuntungan {targetMarkupPercent}% di atas HPP Aksesoris
+                  Rekomendasi harga jual (+{targetMarkupPercent}% di atas Total HPP)
                 </p>
               </div>
 
-              <div className="mt-3 pt-2.5 border-t border-amber-200/80 flex items-center justify-between text-xs">
-                <span className="text-amber-900">Estimasi Laba per Pcs:</span>
-                <span className="font-mono font-bold text-emerald-700">
-                  + Rp {estimatedProfitPerUnit.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
-                </span>
-              </div>
-              <div className="pt-1 flex items-center justify-between text-xs">
-                <span className="text-amber-900">Estimasi Total Laba Batch:</span>
-                <span className="font-mono font-black text-emerald-800">
+              <div className="mt-3 pt-2 border-t border-amber-200 flex items-center justify-between text-[11px]">
+                <span className="text-amber-900 font-semibold">Estimasi Laba Batch:</span>
+                <span className="font-mono font-black text-emerald-700">
                   + Rp {estimatedTotalProfitBatch.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                 </span>
               </div>
@@ -1184,6 +1589,118 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
         </div>
       )}
 
+      {/* Modal Dialog Tambah Jasa Kustom */}
+      {isCustomServiceModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-100 text-indigo-900">
+                  <Scissors className="w-5 h-5 text-indigo-700" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Tambah Biaya Jasa / Pengerjaan Kustom
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Input nama jasa dan tarif pengerjaan untuk pesanan ini
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCustomServiceModalOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddCustomService} className="space-y-3.5 text-xs">
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Nama Jasa / Biaya Pengerjaan <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={customServiceName}
+                  onChange={(e) => setCustomServiceName(e.target.value)}
+                  placeholder="Contoh: Jasa Jahit Rompi, Jasa Bordir Logo, Sablon, Finishing"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-hidden focus:border-indigo-600"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Tarif / Harga Jasa Satuan (Rp) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={customServicePrice}
+                    onChange={(e) => setCustomServicePrice(parseFloat(e.target.value) || 0)}
+                    placeholder="Contoh: 12500"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono font-bold text-slate-900 outline-hidden focus:border-indigo-600"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Satuan Pengerjaan
+                  </label>
+                  <input
+                    type="text"
+                    value={customServiceUnit}
+                    onChange={(e) => setCustomServiceUnit(e.target.value)}
+                    placeholder="pcs, titik, set"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 outline-hidden focus:border-indigo-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">
+                  Jumlah Pengerjaan per 1 Pcs Produk <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="0.1"
+                  step="any"
+                  value={customServiceQty}
+                  onChange={(e) => setCustomServiceQty(parseFloat(e.target.value) || 1)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 font-mono font-bold text-slate-900 outline-hidden focus:border-indigo-600"
+                  required
+                />
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Contoh: 1 kali jahit per produk, atau 2 titik bordir per produk
+                </span>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsCustomServiceModalOpen(false)}
+                  className="rounded-xl border border-slate-300 px-3 py-2 text-slate-600 hover:bg-slate-50 transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-700 hover:bg-indigo-800 px-4 py-2 font-bold text-white transition shadow-xs"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Tambahkan ke Costing</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Modal Dialog Pilihan Penyimpanan: Menimpa Data yang Ada vs Membuat Nama Baru */}
       {isSaveChoiceModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
@@ -1224,7 +1741,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-600 leading-relaxed">
-                  Memperbarui dokumen costing yang sedang dibuka (<strong className="font-mono text-slate-900">{costingNumber}</strong> - {title}) dengan angka & rincian saat ini.
+                  Memperbarui dokumen costing yang sedang dibuka (<strong className="font-mono text-slate-900">{costingNumber}</strong> - {title}) dengan rincian accessories & jasa saat ini.
                 </p>
                 <button
                   type="button"
