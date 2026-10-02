@@ -77,7 +77,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   );
   const [title, setTitle] = useState<string>('Analisis HPP Accessories & Jasa');
   const [buyerName, setBuyerName] = useState<string>(
-    companyProfile.defaultBuyerName || 'MABES TNI / KEMHAN RI'
+    companyProfile.defaultBuyerName || '-'
   );
   const [calculationDate, setCalculationDate] = useState<string>(
     new Date().toISOString().split('T')[0]
@@ -527,7 +527,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   const handleExportCsv = () => {
     let csv = 'data:text/csv;charset=utf-8,';
     csv += `LAPORAN PRODUCT COSTING (HPP ACCESSORIES & JASA)\n`;
-    csv += `Perusahaan,${companyProfile.companyName || 'PT. GARMENT PRESISI NUSANTARA'}\n`;
+    csv += `Perusahaan,${companyProfile.companyName || 'CV. RAVINA'}\n`;
     csv += `No Dokumen Costing,${costingNumber}\n`;
     csv += `Nama Produk,${currentProduct?.name}\n`;
     csv += `Kode Produk,${currentProduct?.code}\n`;
@@ -581,12 +581,12 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     pdf.setFont('helvetica', 'bold');
     pdf.setFontSize(13);
     pdf.setTextColor(20, 30, 60);
-    pdf.text(companyProfile.companyName || 'PT. GARMENT PRESISI NUSANTARA', margin, y);
+    pdf.text(companyProfile.companyName || 'CV. RAVINA', margin, y);
     y += 5;
 
     pdf.setFontSize(9.5);
     pdf.setTextColor(80, 80, 80);
-    pdf.text('LEMBAR PRODUCT COSTING • HPP KOMPONEN ACCESSORIES & BIAYA JASA', margin, y);
+    pdf.text('PRODUCT COSTING • HPP KOMPONEN ACCESSORIES & BIAYA JASA', margin, y);
     y += 4;
     pdf.setDrawColor(20, 30, 60);
     pdf.setLineWidth(0.6);

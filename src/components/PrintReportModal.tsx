@@ -158,7 +158,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
   // Editable header fields directly in report
   const [modalCompanyLogo, setModalCompanyLogo] = useState<string>(calculation.companyLogo || '');
   const [modalCompanyName, setModalCompanyName] = useState<string>(
-    calculation.companyName || 'PT. GARMENT PRESISI NUSANTARA'
+    calculation.companyName || 'CV. RAVINA'
   );
   const [modalBuyerName, setModalBuyerName] = useState<string>(calculation.buyerName || '');
 
@@ -455,7 +455,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
   const handleDownloadCsv = () => {
     let csvContent = 'data:text/csv;charset=utf-8,';
     csvContent += `LAPORAN KEBUTUHAN KONSUMSI BAHAN BAKU\n`;
-    csvContent += `Nama Perusahaan,${modalCompanyName || 'PT. GARMENT PRESISI NUSANTARA'}\n`;
+    csvContent += `Nama Perusahaan,${modalCompanyName || 'CV. RAVINA'}\n`;
     csvContent += `Divisi,DIVISI KOPELRIEM\n`;
     csvContent += `Judul Perhitungan,${calculation.title || calculation.productName}\n`;
     csvContent += `No Dokumen,${calculation.calculationNumber}\n`;
@@ -738,7 +738,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
 
                       <div>
                         <div className="text-base sm:text-lg font-black tracking-wide text-blue-950 uppercase">
-                          {modalCompanyName || 'PT. GARMENT PRESISI NUSANTARA'}
+                          {modalCompanyName || 'CV. RAVINA'}
                         </div>
                         <h1 className="text-xs sm:text-sm font-bold tracking-tight text-slate-700 uppercase">
                           DIVISI KOPELRIEM
@@ -779,7 +779,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                       )}
                       <div>
                         <div className="text-sm font-black tracking-wide text-blue-950 uppercase">
-                          {modalCompanyName || 'PT. GARMENT PRESISI NUSANTARA'}
+                          {modalCompanyName || 'CV. RAVINA'}
                         </div>
                         <div className="text-[11px] font-bold text-slate-700 uppercase">
                           DIVISI KOPELRIEM • LEMBAR {page.pageNumber} DARI {page.totalPages}

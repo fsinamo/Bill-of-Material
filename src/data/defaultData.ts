@@ -1,9 +1,9 @@
 import { Product, RawMaterial, Accessory, CalculationRecord } from '../types';
 
 export const companyProfile = {
-  companyName: 'PT. GARMENT PRESISI NUSANTARA',
+  companyName: 'CV. RAVINA',
   companyAddress: 'Kawasan Industri Tekstil & Perlengkapan Militer, Bandung, Jawa Barat',
-  defaultBuyerName: 'MABES TNI / KEMHAN RI',
+  defaultBuyerName: '-',
   phone: '(022) 8765-4321',
   email: 'info@garmentpro.co.id',
 };
@@ -241,8 +241,8 @@ export const INITIAL_CALCULATIONS: CalculationRecord[] = [
     id: 'calc-po-cn1-1091',
     calculationNumber: 'BOM-2026-001',
     title: 'Pesanan Kopelriem CN1 Batch 1 (1091 Pcs)',
-    companyName: 'PT. GARMENT PRESISI NUSANTARA',
-    buyerName: 'MABES TNI / KEMHAN RI',
+    companyName: 'CV. RAVINA',
+    buyerName: '-',
     productId: 'prod-kopel-cn1',
     productName: 'Kopelriem CN1',
     orderQuantity: 1091,

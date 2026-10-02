@@ -39,9 +39,9 @@ export const storageService = {
     const raw = localStorage.getItem(KEYS.COMPANY_PROFILE);
     if (!raw) {
       const defaultProfile: CompanyProfile = {
-        companyName: 'PT. GARMENT PRESISI NUSANTARA',
+        companyName: 'CV. RAVINA',
         companyLogo: '',
-        defaultBuyerName: 'MABES TNI / KEMHAN RI',
+        defaultBuyerName: '-',
       };
       this.saveCompanyProfile(defaultProfile);
       return defaultProfile;
@@ -50,9 +50,9 @@ export const storageService = {
       return JSON.parse(raw);
     } catch {
       return {
-        companyName: 'PT. GARMENT PRESISI NUSANTARA',
+        companyName: 'CV. RAVINA',
         companyLogo: '',
-        defaultBuyerName: 'MABES TNI / KEMHAN RI',
+        defaultBuyerName: '-',
       };
     }
   },

@@ -73,13 +73,13 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
     initialCalculation?.title || 'Pesanan Kopelriem CN1 Batch 1 (1091 Pcs)'
   );
   const [companyName, setCompanyName] = useState<string>(
-    initialCalculation?.companyName || savedCompanyProfile.companyName || 'PT. GARMENT PRESISI NUSANTARA'
+    initialCalculation?.companyName || savedCompanyProfile.companyName || 'CV. RAVINA'
   );
   const [companyLogo, setCompanyLogo] = useState<string>(
     initialCalculation?.companyLogo || savedCompanyProfile.companyLogo || ''
   );
   const [buyerName, setBuyerName] = useState<string>(
-    initialCalculation?.buyerName || savedCompanyProfile.defaultBuyerName || 'MABES TNI / KEMHAN RI'
+    initialCalculation?.buyerName || savedCompanyProfile.defaultBuyerName || '-'
   );
   const [customerOrPoRef, setCustomerOrPoRef] = useState<string>(
     initialCalculation?.customerOrPoRef || 'PO-GARMENT-CN1/IX/2026'
@@ -121,9 +121,9 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
       setOrderQuantity(initialCalculation.orderQuantity);
       setCalculationNumber(initialCalculation.calculationNumber);
       setTitle(initialCalculation.title);
-      setCompanyName(initialCalculation.companyName || savedCompanyProfile.companyName || 'PT. GARMENT PRESISI NUSANTARA');
+      setCompanyName(initialCalculation.companyName || savedCompanyProfile.companyName || 'CV. RAVINA');
       setCompanyLogo(initialCalculation.companyLogo || savedCompanyProfile.companyLogo || '');
-      setBuyerName(initialCalculation.buyerName || savedCompanyProfile.defaultBuyerName || 'MABES TNI / KEMHAN RI');
+      setBuyerName(initialCalculation.buyerName || savedCompanyProfile.defaultBuyerName || '-');
       setCustomerOrPoRef(initialCalculation.customerOrPoRef || '');
       setCalculationDate(initialCalculation.calculationDate);
       setNotes(initialCalculation.notes || '');
@@ -296,7 +296,7 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
       id: idToUse || activeCalculationId || `calc-${Date.now()}`,
       calculationNumber: numberToUse || calculationNumber,
       title: title.trim() || `${currentProduct?.name || 'Produk'} - ${orderQuantity} Pcs`,
-      companyName: companyName.trim() || 'PT. GARMENT PRESISI NUSANTARA',
+      companyName: companyName.trim() || 'CV. RAVINA',
       companyLogo: companyLogo || '',
       buyerName: buyerName.trim() || '-',
       productId: currentProduct?.id || '',
@@ -535,7 +535,7 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
                 type="text"
                 value={companyName}
                 onChange={(e) => handleCompanyNameChange(e.target.value)}
-                placeholder="PT. GARMENT PRESISI NUSANTARA"
+                placeholder="CV. RAVINA"
                 className="w-full rounded-xl border border-slate-300 pl-9 pr-3 py-2 font-bold text-slate-900 focus:border-blue-600 outline-hidden"
               />
             </div>
