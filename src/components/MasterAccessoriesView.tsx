@@ -34,6 +34,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
 
   // Filter tab
   const [activeFilter, setActiveFilter] = useState<'all' | 'ready_made' | 'raw_material_based'>('all');
+  const [formSuccessMessage, setFormSuccessMessage] = useState<string | null>(null);
 
   // Form states
   const [code, setCode] = useState('');
@@ -56,6 +57,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
     setDefaultYieldPerUnit(400);
     setNotes('');
     setEditingItem(null);
+    setFormSuccessMessage(null);
     setIsEditing(true);
   };
 
@@ -70,6 +72,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
     setDefaultRawMaterialId(a.defaultRawMaterialId || (rawMaterials[0]?.id || ''));
     setDefaultYieldPerUnit(a.defaultYieldPerUnit || 1);
     setNotes(a.notes || '');
+    setFormSuccessMessage(null);
     setIsEditing(true);
   };
 
@@ -77,10 +80,13 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
     e.preventDefault();
     if (!name.trim()) return;
 
+    const savedName = name.trim();
+    const isNew = !editingItem;
+
     const item: Accessory = {
       id: editingItem ? editingItem.id : `acc-${Date.now()}`,
       code: code.trim() || `ACC-${Date.now().toString().slice(-4)}`,
-      name: name.trim(),
+      name: savedName,
       unit: unit.trim() || 'buah',
       category: category,
       purchasePrice: category === 'ready_made' ? Number(purchasePrice) || 0 : undefined,
@@ -92,7 +98,20 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
     };
 
     onSaveAccessory(item);
-    setIsEditing(false);
+
+    // Jangan kembali ke halaman asal agar tidak perlu bolak-balik jika menginput beberapa data
+    if (isNew) {
+      setFormSuccessMessage(`Aksesoris "${savedName}" berhasil disimpan! Formulir siap untuk input berikutnya.`);
+      const nextNum = accessories.length + 2;
+      setCode(`ACC-00${nextNum}`);
+      setName('');
+      setNotes('');
+      if (category === 'ready_made') {
+        setPurchasePrice(0);
+      }
+    } else {
+      setFormSuccessMessage(`Perubahan data aksesoris "${savedName}" berhasil disimpan!`);
+    }
   };
 
   const getMaterial = (mId?: string) => {
@@ -170,12 +189,33 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
               </p>
             </div>
             <button
-              onClick={() => setIsEditing(false)}
+              onClick={() => {
+                setIsEditing(false);
+                setFormSuccessMessage(null);
+              }}
               className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              title="Tutup Formulir"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
+
+          {/* Alert Sukses Simpan (Tetap di Formulir untuk input beruntun) */}
+          {formSuccessMessage && (
+            <div className="mb-4 rounded-xl bg-emerald-50 border border-emerald-300 p-3.5 text-xs text-emerald-900 flex items-center justify-between shadow-xs animate-in fade-in">
+              <div className="flex items-center gap-2 font-medium">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{formSuccessMessage}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormSuccessMessage(null)}
+                className="text-emerald-500 hover:text-emerald-700 font-bold ml-2"
+              >
+                ×
+              </button>
+            </div>
+          )}
 
           <form onSubmit={handleSave} className="space-y-5 text-xs">
             {/* 1. Pemilihan Jenis Accessories (Ready-made vs Raw-material-based) */}
@@ -383,21 +423,30 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setIsEditing(false)}
-                className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
-              >
-                Batal
-              </button>
-              <button
-                type="submit"
-                className="inline-flex items-center gap-1.5 rounded-xl bg-purple-800 px-5 py-2 text-xs font-semibold text-white hover:bg-purple-900 transition shadow-xs"
-              >
-                <Check className="w-4 h-4" />
-                <span>Simpan Master Accessories</span>
-              </button>
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100 flex-wrap">
+              <div className="text-[11px] text-slate-500 font-medium">
+                {!editingItem && '💡 Setelah simpan, formulir akan tetap terbuka agar Anda dapat langsung menginput data berikutnya.'}
+              </div>
+
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditing(false);
+                    setFormSuccessMessage(null);
+                  }}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  {formSuccessMessage ? '✓ Selesai & Tutup' : 'Batal / Tutup'}
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-purple-800 px-5 py-2 text-xs font-semibold text-white hover:bg-purple-900 transition shadow-xs"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{editingItem ? 'Simpan Perubahan' : '💾 Simpan & Input Aksesoris Lain'}</span>
+                </button>
+              </div>
             </div>
           </form>
         </div>

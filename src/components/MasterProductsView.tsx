@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Product, Accessory } from '../types';
-import { Package, Plus, Edit2, Trash2, Check, X, Calculator, Layers, Coins } from 'lucide-react';
+import { Package, Plus, Edit2, Trash2, Check, X, Calculator, Layers, Coins, CheckCircle2 } from 'lucide-react';
 
 interface MasterProductsViewProps {
   products: Product[];
@@ -21,6 +21,7 @@ export const MasterProductsView: React.FC<MasterProductsViewProps> = ({
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [formSuccessMessage, setFormSuccessMessage] = useState<string | null>(null);
 
   // Form states
   const [code, setCode] = useState('');
@@ -41,6 +42,7 @@ export const MasterProductsView: React.FC<MasterProductsViewProps> = ({
     setDescription('');
     setProductAccessories([]);
     setEditingProduct(null);
+    setFormSuccessMessage(null);
     setIsEditing(true);
   };
 
@@ -52,6 +54,7 @@ export const MasterProductsView: React.FC<MasterProductsViewProps> = ({
     setUnit(p.unit);
     setDescription(p.description || '');
     setProductAccessories([...p.accessories]);
+    setFormSuccessMessage(null);
     setIsEditing(true);
   };
 
@@ -74,10 +77,13 @@ export const MasterProductsView: React.FC<MasterProductsViewProps> = ({
     e.preventDefault();
     if (!name.trim()) return;
 
+    const savedName = name.trim();
+    const isNew = !editingProduct;
+
     const item: Product = {
       id: editingProduct ? editingProduct.id : `prod-${Date.now()}`,
       code: code.trim() || `PRD-${Date.now().toString().slice(-4)}`,
-      name: name.trim(),
+      name: savedName,
       category: category.trim() || 'Garment Umum',
       unit: unit.trim() || 'Pcs',
       description: description.trim(),
@@ -87,7 +93,18 @@ export const MasterProductsView: React.FC<MasterProductsViewProps> = ({
     };
 
     onSaveProduct(item);
-    setIsEditing(false);
+
+    // Jangan kembali ke halaman asal agar tidak perlu bolak-balik jika menginput beberapa data
+    if (isNew) {
+      setFormSuccessMessage(`Produk "${savedName}" berhasil disimpan! Formulir siap untuk input produk berikutnya.`);
+      const nextNum = products.length + 2;
+      setCode(`PRD-00${nextNum}`);
+      setName('');
+      setDescription('');
+      setProductAccessories([]);
+    } else {
+      setFormSuccessMessage(`Perubahan data produk "${savedName}" berhasil disimpan!`);
+    }
   };
 
   return (
@@ -123,12 +140,33 @@ export const MasterProductsView: React.FC<MasterProductsViewProps> = ({
               {editingProduct ? 'Edit Master Produk' : 'Tambah Produk Baru'}
             </h3>
             <button
-              onClick={() => setIsEditing(false)}
+              onClick={() => {
+                setIsEditing(false);
+                setFormSuccessMessage(null);
+              }}
               className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              title="Tutup Formulir"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
+
+          {/* Alert Sukses Simpan (Tetap di Formulir untuk input beruntun) */}
+          {formSuccessMessage && (
+            <div className="mb-4 rounded-xl bg-emerald-50 border border-emerald-300 p-3.5 text-xs text-emerald-900 flex items-center justify-between shadow-xs animate-in fade-in">
+              <div className="flex items-center gap-2 font-medium">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{formSuccessMessage}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormSuccessMessage(null)}
+                className="text-emerald-500 hover:text-emerald-700 font-bold ml-2"
+              >
+                ×
+              </button>
+            </div>
+          )}
 
           <form onSubmit={handleSave} className="space-y-5 text-xs">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -247,21 +285,30 @@ export const MasterProductsView: React.FC<MasterProductsViewProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setIsEditing(false)}
-                className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
-              >
-                Batal
-              </button>
-              <button
-                type="submit"
-                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-800 px-5 py-2 text-xs font-semibold text-white hover:bg-blue-900 transition shadow-xs"
-              >
-                <Check className="w-4 h-4" />
-                <span>Simpan Produk</span>
-              </button>
+            <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-100 flex-wrap">
+              <div className="text-[11px] text-slate-500 font-medium">
+                {!editingProduct && '💡 Setelah simpan, formulir akan tetap terbuka agar Anda dapat langsung menginput produk berikutnya.'}
+              </div>
+
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditing(false);
+                    setFormSuccessMessage(null);
+                  }}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  {formSuccessMessage ? '✓ Selesai & Tutup' : 'Batal / Tutup'}
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-blue-800 px-5 py-2 text-xs font-semibold text-white hover:bg-blue-900 transition shadow-xs"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{editingProduct ? 'Simpan Perubahan' : '💾 Simpan & Input Produk Lain'}</span>
+                </button>
+              </div>
             </div>
           </form>
         </div>

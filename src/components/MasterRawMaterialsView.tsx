@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { RawMaterial } from '../types';
-import { Layers, Plus, Edit2, Trash2, Check, X, ShieldAlert } from 'lucide-react';
+import { Layers, Plus, Edit2, Trash2, Check, X, ShieldAlert, CheckCircle2 } from 'lucide-react';
 
 interface MasterRawMaterialsViewProps {
   rawMaterials: RawMaterial[];
@@ -15,6 +15,7 @@ export const MasterRawMaterialsView: React.FC<MasterRawMaterialsViewProps> = ({
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editingItem, setEditingItem] = useState<RawMaterial | null>(null);
+  const [formSuccessMessage, setFormSuccessMessage] = useState<string | null>(null);
 
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
@@ -34,6 +35,7 @@ export const MasterRawMaterialsView: React.FC<MasterRawMaterialsViewProps> = ({
     setUnitPrice(250000);
     setNotes('');
     setEditingItem(null);
+    setFormSuccessMessage(null);
     setIsEditing(true);
   };
 
@@ -46,6 +48,7 @@ export const MasterRawMaterialsView: React.FC<MasterRawMaterialsViewProps> = ({
     setCurrentStock(m.currentStock);
     setUnitPrice(m.unitPrice || 0);
     setNotes(m.notes || '');
+    setFormSuccessMessage(null);
     setIsEditing(true);
   };
 
@@ -53,10 +56,13 @@ export const MasterRawMaterialsView: React.FC<MasterRawMaterialsViewProps> = ({
     e.preventDefault();
     if (!name.trim()) return;
 
+    const savedName = name.trim();
+    const isNew = !editingItem;
+
     const item: RawMaterial = {
       id: editingItem ? editingItem.id : `bb-${Date.now()}`,
       code: code.trim() || `BB-${Date.now().toString().slice(-4)}`,
-      name: name.trim(),
+      name: savedName,
       specification: specification.trim(),
       unit: unit.trim() || 'Lembar',
       currentStock: Number(currentStock) || 0,
@@ -67,7 +73,18 @@ export const MasterRawMaterialsView: React.FC<MasterRawMaterialsViewProps> = ({
     };
 
     onSaveRawMaterial(item);
-    setIsEditing(false);
+
+    // Jangan kembali ke halaman asal agar tidak perlu bolak-balik jika menginput beberapa data
+    if (isNew) {
+      setFormSuccessMessage(`Bahan baku "${savedName}" berhasil disimpan! Formulir siap untuk input bahan baku berikutnya.`);
+      const nextNum = rawMaterials.length + 2;
+      setCode(`BB-00${nextNum}`);
+      setName('');
+      setSpecification('');
+      setNotes('');
+    } else {
+      setFormSuccessMessage(`Perubahan data bahan baku "${savedName}" berhasil disimpan!`);
+    }
   };
 
   return (
@@ -101,12 +118,33 @@ export const MasterRawMaterialsView: React.FC<MasterRawMaterialsViewProps> = ({
               {editingItem ? 'Edit Bahan Baku' : 'Tambah Bahan Baku Baru'}
             </h3>
             <button
-              onClick={() => setIsEditing(false)}
+              onClick={() => {
+                setIsEditing(false);
+                setFormSuccessMessage(null);
+              }}
               className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              title="Tutup Formulir"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
+
+          {/* Alert Sukses Simpan (Tetap di Formulir untuk input beruntun) */}
+          {formSuccessMessage && (
+            <div className="mb-4 rounded-xl bg-emerald-50 border border-emerald-300 p-3.5 text-xs text-emerald-900 flex items-center justify-between shadow-xs animate-in fade-in">
+              <div className="flex items-center gap-2 font-medium">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{formSuccessMessage}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormSuccessMessage(null)}
+                className="text-emerald-500 hover:text-emerald-700 font-bold ml-2"
+              >
+                ×
+              </button>
+            </div>
+          )}
 
           <form onSubmit={handleSave} className="space-y-4 text-xs">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -184,21 +222,30 @@ export const MasterRawMaterialsView: React.FC<MasterRawMaterialsViewProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setIsEditing(false)}
-                className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
-              >
-                Batal
-              </button>
-              <button
-                type="submit"
-                className="inline-flex items-center gap-1.5 rounded-xl bg-amber-700 px-5 py-2 text-xs font-semibold text-white hover:bg-amber-800 transition shadow-xs"
-              >
-                <Check className="w-4 h-4" />
-                <span>Simpan Bahan Baku</span>
-              </button>
+            <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100 flex-wrap">
+              <div className="text-[11px] text-slate-500 font-medium">
+                {!editingItem && '💡 Setelah simpan, formulir akan tetap terbuka agar Anda dapat langsung menginput bahan baku berikutnya.'}
+              </div>
+
+              <div className="flex items-center gap-2 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditing(false);
+                    setFormSuccessMessage(null);
+                  }}
+                  className="rounded-xl border border-slate-300 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  {formSuccessMessage ? '✓ Selesai & Tutup' : 'Batal / Tutup'}
+                </button>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-amber-700 px-5 py-2 text-xs font-semibold text-white hover:bg-amber-800 transition shadow-xs"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>{editingItem ? 'Simpan Perubahan' : '💾 Simpan & Input Bahan Lain'}</span>
+                </button>
+              </div>
             </div>
           </form>
         </div>

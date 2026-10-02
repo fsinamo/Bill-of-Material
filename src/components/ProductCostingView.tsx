@@ -23,7 +23,10 @@ import {
   HelpCircle,
   Copy,
   FolderOpen,
-  Scissors
+  Scissors,
+  X,
+  RotateCw,
+  PlusCircle
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 
@@ -51,6 +54,14 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   const [savedCostings, setSavedCostings] = useState<ProductCostingRecord[]>(() =>
     storageService.getProductCostings()
   );
+
+  // Active Costing ID if loaded or previously saved
+  const [activeCostingId, setActiveCostingId] = useState<string | null>(null);
+
+  // Modal Pilihan Penyimpanan (Menimpa vs Nama Baru)
+  const [isSaveChoiceModalOpen, setIsSaveChoiceModalOpen] = useState<boolean>(false);
+  const [newSaveCostingNumber, setNewSaveCostingNumber] = useState<string>('');
+  const [newSaveCostingTitle, setNewSaveCostingTitle] = useState<string>('');
 
   // Form states
   const [selectedProductId, setSelectedProductId] = useState<string>(
@@ -283,14 +294,69 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     setTimeout(() => setNotice(null), 3000);
   };
 
-  // Save Costing
-  const handleSaveCosting = () => {
+  // Buka modal pilihan penyimpanan (Menimpa data yang ada vs Membuat nama baru)
+  const handleOpenSaveCostingModal = () => {
+    const currentBase = costingNumber.replace(/-REV\d+|-COPY|-BARU/g, '');
+    const suggestedNum = `${currentBase}-REV${Date.now().toString().slice(-3)}`;
+    setNewSaveCostingNumber(suggestedNum);
+    setNewSaveCostingTitle(title ? `${title} (Baru)` : `Costing ${currentProduct?.name || 'Produk'}`);
+    setIsSaveChoiceModalOpen(true);
+  };
+
+  // 1. Pilihan Menimpa Data yang Ada
+  const handleConfirmOverwriteCosting = () => {
     if (!currentProduct) return;
+    setIsSaveChoiceModalOpen(false);
+
+    const existingRec = activeCostingId
+      ? savedCostings.find((c) => c.id === activeCostingId)
+      : savedCostings.find((c) => c.costingNumber === costingNumber);
+    const targetId = existingRec ? existingRec.id : (activeCostingId || `costing-${Date.now()}`);
 
     const record: ProductCostingRecord = {
-      id: `costing-${Date.now()}`,
+      id: targetId,
       costingNumber,
       title: title.trim() || `Costing ${currentProduct.name}`,
+      productId: currentProduct.id,
+      productName: currentProduct.name,
+      productCode: currentProduct.code,
+      productCategory: currentProduct.category,
+      orderQuantity,
+      items: updatedItems,
+      totalCostPerUnit,
+      totalBatchCost,
+      targetMarkupPercent,
+      targetSellingPricePerUnit: recommendedSellingPricePerUnit,
+      calculationDate,
+      notes,
+      createdAt: existingRec ? existingRec.createdAt : new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    setActiveCostingId(targetId);
+    const updated = storageService.saveSingleProductCosting(record);
+    setSavedCostings(updated);
+    setNotice(`Kalkulasi Costing "${record.costingNumber}" berhasil diperbarui (menimpa data yang ada)!`);
+    setTimeout(() => setNotice(null), 4000);
+  };
+
+  // 2. Pilihan Membuat Dokumen / Nama Baru
+  const handleConfirmSaveAsNewCosting = () => {
+    if (!currentProduct) return;
+    setIsSaveChoiceModalOpen(false);
+
+    const finalNum = newSaveCostingNumber.trim() || `CST-${new Date().getFullYear()}-${Math.floor(Math.random() * 900) + 100}`;
+    const finalTitle = newSaveCostingTitle.trim() || `${title} (Baru)`;
+    const newId = `costing-${Date.now()}`;
+
+    setCostingNumber(finalNum);
+    setTitle(finalTitle);
+    setActiveCostingId(newId);
+
+    const record: ProductCostingRecord = {
+      id: newId,
+      costingNumber: finalNum,
+      title: finalTitle,
       productId: currentProduct.id,
       productName: currentProduct.name,
       productCode: currentProduct.code,
@@ -309,7 +375,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
 
     const updated = storageService.saveSingleProductCosting(record);
     setSavedCostings(updated);
-    setNotice(`Kalkulasi Costing "${record.costingNumber}" berhasil disimpan!`);
+    setNotice(`Dokumen baru Costing "${finalNum}" berhasil dibuat & disimpan!`);
     setTimeout(() => setNotice(null), 4000);
   };
 
@@ -317,12 +383,16 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     if (confirm('Hapus arsip perhitungan costing ini?')) {
       const updated = storageService.deleteProductCosting(id);
       setSavedCostings(updated);
+      if (activeCostingId === id) {
+        setActiveCostingId(null);
+      }
       setNotice('Arsip costing berhasil dihapus.');
       setTimeout(() => setNotice(null), 3000);
     }
   };
 
   const handleLoadSavedCosting = (rec: ProductCostingRecord) => {
+    setActiveCostingId(rec.id);
     setSelectedProductId(rec.productId);
     setOrderQuantity(rec.orderQuantity);
     setCostingNumber(rec.costingNumber);
@@ -1073,7 +1143,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
             <div className="flex items-center gap-2">
               <button
                 id="btn-save-product-costing"
-                onClick={handleSaveCosting}
+                onClick={handleOpenSaveCostingModal}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-blue-800 hover:bg-blue-900 px-4 py-2.5 text-xs font-bold text-white transition shadow-sm"
               >
                 <Save className="w-4 h-4" />
@@ -1108,6 +1178,125 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
               >
                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Export CSV</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Dialog Pilihan Penyimpanan: Menimpa Data yang Ada vs Membuat Nama Baru */}
+      {isSaveChoiceModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 space-y-5 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-amber-900">
+                  <Coins className="w-5 h-5 text-amber-700" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Pilihan Penyimpanan Product Costing
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Tentukan apakah ingin menimpa dokumen costing saat ini atau menyimpan sebagai arsip baru
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSaveChoiceModalOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5">
+              {/* Pilihan 1: Menimpa Data yang Ada */}
+              <div className="rounded-xl border-2 border-slate-200 hover:border-amber-600 bg-slate-50/70 p-4 transition space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                    <RotateCw className="w-4 h-4 text-amber-700" />
+                    <span>1. Menimpa Data yang Ada (Update)</span>
+                  </span>
+                  <span className="rounded-md bg-amber-100 text-amber-800 px-2 py-0.5 text-[10px] font-bold">
+                    Update Costing
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  Memperbarui dokumen costing yang sedang dibuka (<strong className="font-mono text-slate-900">{costingNumber}</strong> - {title}) dengan angka & rincian saat ini.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleConfirmOverwriteCosting}
+                  className="w-full mt-2 inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-700 hover:bg-amber-800 py-2.5 px-3 text-xs font-bold text-white transition shadow-xs"
+                >
+                  <RotateCw className="w-3.5 h-3.5" />
+                  <span>Timpa Dokumen Ini ({costingNumber})</span>
+                </button>
+              </div>
+
+              {/* Pilihan 2: Membuat Nama Baru */}
+              <div className="rounded-xl border-2 border-slate-200 hover:border-emerald-600 bg-emerald-50/40 p-4 transition space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                    <PlusCircle className="w-4 h-4 text-emerald-700" />
+                    <span>2. Membuat Dokumen / Nama Baru (Save As New)</span>
+                  </span>
+                  <span className="rounded-md bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[10px] font-bold">
+                    Arsip Baru
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600">
+                  Menyimpan sebagai arsip costing terpisah dengan nomor dan nama dokumen baru tanpa mengubah arsip sebelumnya.
+                </p>
+
+                <div className="space-y-2.5 pt-1 border-t border-emerald-200/60 text-xs">
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Nomor Dokumen Costing Baru <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newSaveCostingNumber}
+                      onChange={(e) => setNewSaveCostingNumber(e.target.value)}
+                      placeholder="Contoh: CST-2026-891-REV1"
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-900 font-mono outline-hidden focus:border-emerald-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Judul Costing Baru <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newSaveCostingTitle}
+                      onChange={(e) => setNewSaveCostingTitle(e.target.value)}
+                      placeholder="Contoh: Costing Kopelriem CN1 (Vendor Alternatif)"
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-900 outline-hidden focus:border-emerald-600"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleConfirmSaveAsNewCosting}
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 py-2.5 px-3 text-xs font-bold text-white transition shadow-xs"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>Simpan Sebagai Costing Baru</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsSaveChoiceModalOpen(false)}
+                className="rounded-xl border border-slate-300 px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
+              >
+                Batal
               </button>
             </div>
           </div>
