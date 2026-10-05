@@ -4,24 +4,32 @@ import { storageService } from './storageService';
 export const APPS_SCRIPT_TEMPLATE = `/**
  * GOOGLE APPS SCRIPT UNTUK SINKRONISASI GARMENTPRO (KONSUMSI BAHAN)
  * ================================================================
- * Langkah Penggunaan:
- * 1. Buat Google Spreadsheet baru di Google Drive (atau beri nama: Data Produksi Garment)
+ * Langkah Penggunaan yang Benar:
+ * 1. Buka Google Spreadsheet Anda (atau buat baru di drive.google.com)
  * 2. Klik menu 'Extensions' (Ekstensi) > 'Apps Script'
- * 3. Hapus kode bawaan di Code.gs, lalu paste SELURUH kode di bawah ini
- * 4. Klik tombol 'Save' (Simpan)
- * 5. Klik tombol 'Deploy' (Terapkan) > 'New deployment' (Penerapan baru)
- * 6. Pilih type: 'Web app' (Aplikasi web)
- * 7. Konfigurasi:
- *    - Description: GarmentPro Web App API
- *    - Execute as: 'Me' (Saya)
- *    - Who has access: 'Anyone' (Siapa saja)  <-- PENTING agar web app bisa kirim/tarik data!
- * 8. Klik 'Deploy', beri otorisasi akun Google Anda jika diminta
- * 9. Salin 'Web app URL' (akhiran /exec) dan tempelkan ke aplikasi GarmentPro di tab 'Sinkronisasi Sheets'
+ * 3. Hapus seluruh kode bawaan di Code.gs, lalu paste SELURUH kode di bawah ini
+ * 4. Klik tombol 'Save' (ikon Disket)
+ * 5. Klik tombol biru 'Deploy' (Terapkan) di kanan atas > pilih 'New deployment' (Penerapan baru)
+ * 6. Klik ikon Gear (roda gigi) di kiri atas pop-up, pastikan pilih 'Web app' (Aplikasi web)
+ * 7. Konfigurasi PENTING:
+ *    - Description: GarmentPro Sync API
+ *    - Execute as: 'Me' (Saya - email Anda)
+ *    - Who has access: 'Anyone' (Siapa saja)  <-- CRITICAL: Wajib pilih 'Anyone' agar browser bisa bertukar data tanpa terhalang login!
+ * 8. Klik 'Deploy', lalu klik 'Authorize access' / 'Review permissions' dan pilih akun Google Anda.
+ *    (Jika muncul 'Google hasn't verified this app', klik 'Advanced' > 'Go to Untitled project (unsafe)' > 'Allow')
+ * 9. Salin 'Web app URL' (yang berakhiran /exec) dan tempelkan ke aplikasi GarmentPro.
  */
 
 function doGet(e) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'error',
+        message: 'Spreadsheet aktif tidak ditemukan. Pastikan script ini dibuka dari menu Extensions > Apps Script di dalam file Google Spreadsheet.'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : 'pull';
     
     if (action === 'ping') {
@@ -61,12 +69,52 @@ function doGet(e) {
 function doPost(e) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var postData = {};
-    if (e && e.postData && e.postData.contents) {
-      postData = JSON.parse(e.postData.contents);
+    if (!ss) {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'error',
+        message: 'Spreadsheet aktif tidak ditemukan. Pastikan script ini dibuka dari menu Extensions > Apps Script di dalam file Google Spreadsheet.'
+      })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    var action = postData.action || 'push';
+    var postData = {};
+    if (e && e.postData && e.postData.contents) {
+      try {
+        postData = JSON.parse(e.postData.contents);
+      } catch (parseErr) {
+        postData = {};
+      }
+    }
+
+    var action = postData.action || (e && e.parameter && e.parameter.action) || 'push';
+
+    // Support ping via POST
+    if (action === 'ping') {
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        message: 'Koneksi ke Google Sheets berhasil (via POST)!',
+        timestamp: new Date().toISOString(),
+        spreadsheetName: ss.getName()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // Support pull via POST
+    if (action === 'pull') {
+      var calculations = readSheetData(ss, 'Konsumsi_Bahan');
+      var products = readSheetData(ss, 'Master_Produk');
+      var rawMaterials = readSheetData(ss, 'Master_BahanBaku');
+      var accessories = readSheetData(ss, 'Master_Accessories');
+
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        timestamp: new Date().toISOString(),
+        data: {
+          calculations: calculations,
+          products: products,
+          rawMaterials: rawMaterials,
+          accessories: accessories
+        }
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
 
     if (action === 'push_all' || action === 'push') {
       if (postData.calculations) writeCalculations(ss, postData.calculations);
@@ -85,7 +133,7 @@ function doPost(e) {
       appendOrUpdateCalculation(ss, postData.calculation);
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
-        message: 'Kalkulasi ' + (postData.calculation.calculationNumber || '') + ' berhasil disimpan di Google Sheets!',
+        message: 'Kalkulasi ' + ((postData.calculation && postData.calculation.calculationNumber) || '') + ' berhasil disimpan di Google Sheets!',
         timestamp: new Date().toISOString()
       })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -145,6 +193,7 @@ function writeCalculations(ss, calculations) {
 }
 
 function appendOrUpdateCalculation(ss, calc) {
+  if (!calc) return;
   var sheet = getOrCreateSheet(ss, 'Konsumsi_Bahan');
   var data = sheet.getDataRange().getValues();
   var rowIndex = -1;
@@ -248,34 +297,157 @@ function readSheetData(ss, sheetName) {
 }
 `;
 
-export const sheetsSyncService = {
-  async testConnection(url: string): Promise<{ success: boolean; message: string; data?: unknown }> {
-    if (!url || !url.trim().startsWith('http')) {
-      return { success: false, message: 'URL Apps Script belum diisi atau tidak valid (harus diawali https://script.google.com/)' };
+/**
+ * Validates and sanitizes the user-provided Google Apps Script URL.
+ */
+function validateAndSanitizeUrl(rawUrl: string): { valid: boolean; url: string; error?: string } {
+  let cleanUrl = (rawUrl || '').trim();
+
+  if (!cleanUrl || !cleanUrl.startsWith('http')) {
+    return {
+      valid: false,
+      url: cleanUrl,
+      error: 'URL Google Apps Script belum diisi atau tidak valid (wajib diawali https://script.google.com/macros/s/...)',
+    };
+  }
+
+  // Common user mistake: pasting Google Spreadsheet link
+  if (cleanUrl.includes('docs.google.com/spreadsheets')) {
+    return {
+      valid: false,
+      url: cleanUrl,
+      error: 'URL yang Anda masukkan adalah tautan file Google Spreadsheet, BUKAN Web App URL Apps Script! Buka file Spreadsheet Anda > menu "Ekstensi" > "Apps Script" > klik tombol biru "Deploy" > "New deployment" > pilih "Web app" (Who has access: Anyone) > lalu salin Web App URL yang berakhiran /exec.',
+    };
+  }
+
+  // Common user mistake: pasting Apps Script editor or project link
+  if (cleanUrl.includes('script.google.com/home') || cleanUrl.endsWith('/edit') || cleanUrl.includes('/edit#')) {
+    return {
+      valid: false,
+      url: cleanUrl,
+      error: 'URL yang Anda masukkan adalah halaman editor kode Apps Script. Silakan klik tombol biru "Deploy" di kanan atas > "New deployment" > jenis: "Web app" > "Who has access: Anyone", lalu salin URL yang berakhiran /exec.',
+    };
+  }
+
+  // Auto-correct /dev to /exec if user copied test deployment
+  if (cleanUrl.endsWith('/dev')) {
+    cleanUrl = cleanUrl.replace(/\/dev$/, '/exec');
+  }
+
+  return { valid: true, url: cleanUrl };
+}
+
+/**
+ * Parses response text from Google Apps Script and handles HTML login redirects or syntax errors gracefully.
+ */
+function parseAppsScriptResponse(rawText: string, targetUrl: string): any {
+  if (!rawText || typeof rawText !== 'string') {
+    throw new Error('Tidak ada respons yang diterima dari server Google Apps Script.');
+  }
+
+  const trimmed = rawText.trim();
+
+  // If Google returned HTML instead of JSON:
+  if (
+    trimmed.startsWith('<') ||
+    trimmed.toLowerCase().includes('<!doctype') ||
+    trimmed.toLowerCase().includes('<html')
+  ) {
+    if (targetUrl.includes('docs.google.com/spreadsheets')) {
+      throw new Error(
+        'URL yang Anda masukkan adalah Google Spreadsheet, bukan Web App URL. Silakan ikuti panduan di tab "Kode Apps Script" untuk membuat Web App dan menyalin URL berakhiran /exec.'
+      );
     }
 
+    if (
+      trimmed.includes('ServiceLogin') ||
+      trimmed.includes('accounts.google.com') ||
+      trimmed.includes('Sign in - Google Accounts')
+    ) {
+      throw new Error(
+        'Google memblokir akses karena pengaturan izin Web App belum publik. Solusi: Di halaman Apps Script Anda, klik tombol "Deploy" > "Manage deployments" > klik ikon Pensil (Edit) > ubah "Who has access" (Siapa yang memiliki akses) menjadi "Anyone" (Siapa saja) > klik "Deploy".'
+      );
+    }
+
+    if (trimmed.includes('Script function not found') || trimmed.includes('doGet')) {
+      throw new Error(
+        'Fungsi doGet() atau doPost() tidak ditemukan di Apps Script. Pastikan Anda telah menempelkan seluruh kode dari tab "Kode Apps Script" ke Code.gs dan menyimpannya.'
+      );
+    }
+
+    throw new Error(
+      'Google Apps Script mengembalikan halaman HTML. Hal ini biasanya terjadi jika: 1) Opsi "Who has access" belum diatur ke "Anyone" (Siapa saja); atau 2) Anda belum mengklik "Review Permissions" untuk memberi izin script mengakses spreadsheet.'
+    );
+  }
+
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    throw new Error(
+      `Format data dari Google Sheets tidak valid (bukan JSON): "${trimmed.slice(0, 100)}..."`
+    );
+  }
+}
+
+export const sheetsSyncService = {
+  async testConnection(url: string): Promise<{ success: boolean; message: string; data?: unknown }> {
+    const check = validateAndSanitizeUrl(url);
+    if (!check.valid) {
+      return { success: false, message: check.error! };
+    }
+
+    const cleanUrl = check.url;
+    let rawText = '';
+
     try {
-      const pingUrl = `${url.trim()}${url.includes('?') ? '&' : '?'}action=ping`;
+      // 1. Try GET ping
+      const pingUrl = `${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}action=ping&_t=${Date.now()}`;
       const response = await fetch(pingUrl, {
         method: 'GET',
         mode: 'cors',
+        redirect: 'follow',
       });
 
-      if (!response.ok) {
-        throw new Error(`Server status HTTP ${response.status}`);
+      rawText = await response.text();
+    } catch (err: unknown) {
+      // 2. Try POST fallback if GET was blocked
+      try {
+        const postRes = await fetch(cleanUrl, {
+          method: 'POST',
+          mode: 'cors',
+          redirect: 'follow',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'ping' }),
+        });
+        rawText = await postRes.text();
+      } catch {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        return {
+          success: false,
+          message: `Gagal tersambung ke server Google: ${errorMsg}. Pastikan perangkat terhubung internet dan URL diawali https://script.google.com/`,
+        };
       }
+    }
 
-      const result = await response.json();
-      return {
-        success: result.status === 'success',
-        message: result.message || 'Koneksi ke Google Sheets berhasil!',
-        data: result,
-      };
+    try {
+      const result = parseAppsScriptResponse(rawText, cleanUrl);
+      if (result.status === 'success') {
+        return {
+          success: true,
+          message: result.message || `Koneksi ke Google Sheets berhasil! ${result.spreadsheetName ? `(Spreadsheet: ${result.spreadsheetName})` : ''}`,
+          data: result,
+        };
+      } else {
+        return {
+          success: false,
+          message: result.message || 'Apps Script merespons status error.',
+        };
+      }
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       return {
         success: false,
-        message: `Gagal tersambung: ${errorMsg}. Pastikan Apps Script di-deploy dengan akses 'Anyone'.`,
+        message: errorMsg,
       };
     }
   },
@@ -289,22 +461,25 @@ export const sheetsSyncService = {
       accessories: Accessory[];
     }
   ): Promise<{ success: boolean; message: string }> {
-    if (!url || !url.trim().startsWith('http')) {
-      // Local fallback simulation with success indicator
+    const check = validateAndSanitizeUrl(url);
+    if (!check.valid) {
       storageService.addSyncLog({
         action: 'Push Sinkronisasi ke Google Sheets',
         status: 'error',
-        message: 'URL Google Apps Script belum dikonfigurasi.',
+        message: check.error!,
       });
-      return { success: false, message: 'URL Google Apps Script belum dikonfigurasi. Data tetap aman di penyimpanan lokal.' };
+      return { success: false, message: check.error! };
     }
 
+    const cleanUrl = check.url;
+
     try {
-      const response = await fetch(url.trim(), {
+      const response = await fetch(cleanUrl, {
         method: 'POST',
         mode: 'cors',
+        redirect: 'follow',
         headers: {
-          'Content-Type': 'text/plain;charset=utf-8', // Google Apps Script handles text/plain without CORS preflight issues
+          'Content-Type': 'text/plain;charset=utf-8',
         },
         body: JSON.stringify({
           action: 'push_all',
@@ -312,9 +487,10 @@ export const sheetsSyncService = {
         }),
       });
 
-      const result = await response.json();
+      const rawText = await response.text();
+      const result = parseAppsScriptResponse(rawText, cleanUrl);
+
       if (result.status === 'success') {
-        // Mark all calculations as synced
         const updatedCalcs = data.calculations.map((c) => ({
           ...c,
           syncStatus: 'synced' as const,
@@ -344,14 +520,18 @@ export const sheetsSyncService = {
   },
 
   async pushSingleCalculation(url: string, calc: CalculationRecord): Promise<{ success: boolean; message: string }> {
-    if (!url || !url.trim().startsWith('http')) {
-      return { success: false, message: 'URL Google Apps Script belum diisi.' };
+    const check = validateAndSanitizeUrl(url);
+    if (!check.valid) {
+      return { success: false, message: check.error! };
     }
 
+    const cleanUrl = check.url;
+
     try {
-      const response = await fetch(url.trim(), {
+      const response = await fetch(cleanUrl, {
         method: 'POST',
         mode: 'cors',
+        redirect: 'follow',
         headers: {
           'Content-Type': 'text/plain;charset=utf-8',
         },
@@ -361,7 +541,9 @@ export const sheetsSyncService = {
         }),
       });
 
-      const result = await response.json();
+      const rawText = await response.text();
+      const result = parseAppsScriptResponse(rawText, cleanUrl);
+
       if (result.status === 'success') {
         storageService.addSyncLog({
           action: `Sync Kalkulasi ${calc.calculationNumber}`,
@@ -395,18 +577,54 @@ export const sheetsSyncService = {
       accessories?: Accessory[];
     };
   }> {
-    if (!url || !url.trim().startsWith('http')) {
-      return { success: false, message: 'URL Google Apps Script belum dikonfigurasi.' };
+    const check = validateAndSanitizeUrl(url);
+    if (!check.valid) {
+      return { success: false, message: check.error! };
     }
 
+    const cleanUrl = check.url;
+    let rawText = '';
+    let lastError: Error | null = null;
+
+    // 1. Try GET request first
     try {
-      const pullUrl = `${url.trim()}${url.includes('?') ? '&' : '?'}action=pull`;
+      const pullUrl = `${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}action=pull&_t=${Date.now()}`;
       const response = await fetch(pullUrl, {
         method: 'GET',
         mode: 'cors',
+        redirect: 'follow',
       });
+      rawText = await response.text();
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
 
-      const result = await response.json();
+    // 2. If GET returned HTML or failed, try POST with action: 'pull' (which avoids some CORS issues)
+    if (!rawText || rawText.trim().startsWith('<')) {
+      try {
+        const postResponse = await fetch(cleanUrl, {
+          method: 'POST',
+          mode: 'cors',
+          redirect: 'follow',
+          headers: {
+            'Content-Type': 'text/plain;charset=utf-8',
+          },
+          body: JSON.stringify({ action: 'pull' }),
+        });
+        const postText = await postResponse.text();
+        if (postText && !postText.trim().startsWith('<')) {
+          rawText = postText;
+        }
+      } catch (postErr) {
+        if (!lastError) {
+          lastError = postErr instanceof Error ? postErr : new Error(String(postErr));
+        }
+      }
+    }
+
+    try {
+      const result = parseAppsScriptResponse(rawText, cleanUrl);
+
       if (result.status === 'success' && result.data) {
         storageService.addSyncLog({
           action: 'Tarik Data dari Google Sheets',

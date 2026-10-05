@@ -181,23 +181,45 @@ export const GoogleSheetsSyncView: React.FC<GoogleSheetsSyncViewProps> = ({
 
       {testResult && (
         <div
-          className={`flex items-start gap-3 rounded-xl p-4 text-xs border ${
+          className={`rounded-xl p-4 text-xs border space-y-3 ${
             testResult.success
               ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
               : 'bg-rose-50 border-rose-200 text-rose-900'
           }`}
         >
-          {testResult.success ? (
-            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-          ) : (
-            <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-          )}
-          <div className="flex-1">
-            <p className="font-semibold">{testResult.message}</p>
+          <div className="flex items-start gap-3">
+            {testResult.success ? (
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            ) : (
+              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+            )}
+            <div className="flex-1">
+              <p className="font-semibold leading-relaxed">{testResult.message}</p>
+            </div>
+            <button onClick={() => setTestResult(null)} className="text-slate-400 hover:text-slate-600">
+              ×
+            </button>
           </div>
-          <button onClick={() => setTestResult(null)} className="text-slate-400 hover:text-slate-600">
-            ×
-          </button>
+
+          {!testResult.success && (
+            <div className="rounded-lg bg-white/80 p-3 border border-rose-200 text-slate-700 space-y-2">
+              <div className="font-bold text-rose-900 flex items-center gap-1.5 text-[11px]">
+                <Info className="w-3.5 h-3.5 text-rose-600" />
+                <span>Panduan Solusi Mengatasi Masalah Akses Google Sheets:</span>
+              </div>
+              <ul className="list-disc list-inside space-y-1 text-[11px] text-slate-600 leading-relaxed">
+                <li>
+                  <strong>Pastikan Izin Akses "Anyone":</strong> Di Apps Script Anda, klik <em>Deploy &gt; Manage deployments &gt; ikon Pensil (Edit) &gt; Who has access: Anyone (Siapa saja) &gt; Deploy</em>.
+                </li>
+                <li>
+                  <strong>Gunakan Web App URL (/exec):</strong> Jangan gunakan link spreadsheet atau /edit, melainkan URL hasil Deploy yang berakhiran <code className="bg-slate-100 px-1 py-0.5 rounded font-mono text-rose-700">/exec</code>.
+                </li>
+                <li>
+                  <strong>Perbarui Kode Script:</strong> Buka tab <strong>Kode Apps Script (Code.gs)</strong> di atas, salin kode terbaru, tempelkan ke Code.gs Anda dan Deploy versi baru.
+                </li>
+              </ul>
+            </div>
+          )}
         </div>
       )}
 
@@ -227,6 +249,52 @@ export const GoogleSheetsSyncView: React.FC<GoogleSheetsSyncViewProps> = ({
                   <p className="mt-1.5 text-slate-500">
                     Didapat dari menu Google Sheets: <em>Extensions &gt; Apps Script &gt; Deploy &gt; New deployment &gt; Web app</em> (akses: Anyone).
                   </p>
+
+                  {/* Deteksi Link Google Spreadsheet */}
+                  {url && url.includes('docs.google.com/spreadsheets') && (
+                    <div className="mt-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 space-y-1 animate-in fade-in">
+                      <div className="font-bold flex items-center gap-1.5 text-rose-900">
+                        <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                        <span>Tautan yang Dimasukkan adalah File Spreadsheet!</span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-slate-600">
+                        Anda memasukkan link Google Docs/Sheets, bukan Web App API. Untuk mendapatkan Web App URL yang benar:
+                        Buka spreadsheet &gt; menu <strong>Extensions (Ekstensi)</strong> &gt; <strong>Apps Script</strong> &gt; tombol <strong>Deploy (Terapkan)</strong> &gt; <strong>New deployment</strong> &gt; pilih <strong>Web app</strong> (Who has access: <strong>Anyone</strong>) &gt; salin URL yang berakhiran <code className="bg-rose-100 px-1 py-0.5 rounded font-mono font-bold text-rose-800">/exec</code>.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Deteksi Link Halaman Editor Apps Script */}
+                  {url && (url.includes('script.google.com/home') || url.endsWith('/edit') || url.includes('/edit#')) && (
+                    <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800 space-y-1 animate-in fade-in">
+                      <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                        <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>Ini adalah Link Editor Kode Apps Script</span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-slate-600">
+                        Klik tombol biru <strong>Deploy (Terapkan)</strong> di pojok kanan atas editor &gt; <strong>New deployment</strong> &gt; jenis: <strong>Web app</strong> (Who has access: <strong>Anyone</strong>) &gt; salin URL hasil deployment yang berakhiran <code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-bold text-amber-800">/exec</code>.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Deteksi /dev URL */}
+                  {url && url.endsWith('/dev') && (
+                    <div className="mt-2 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 flex items-center justify-between gap-3 animate-in fade-in">
+                      <div className="flex items-center gap-2">
+                        <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                        <span className="text-[11px]">
+                          URL berakhiran <strong>/dev</strong> memerlukan login. Ubah ke <strong>/exec</strong> untuk akses publik:
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setUrl(url.replace(/\/dev$/, '/exec'))}
+                        className="rounded-lg bg-blue-700 hover:bg-blue-800 text-white px-2.5 py-1 text-[11px] font-bold shrink-0 transition"
+                      >
+                        Ubah ke /exec
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between rounded-xl bg-slate-50 p-3.5 border border-slate-200">
