@@ -959,7 +959,7 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
               className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-800 transition shadow-xs"
             >
               <Printer className="w-4 h-4 text-blue-300" />
-              <span>Cetak Laporan (PDF)</span>
+              <span>Cetak & Unduh Laporan (PDF / JPEG / PNG)</span>
             </button>
 
             <button

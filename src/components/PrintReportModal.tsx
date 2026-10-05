@@ -12,7 +12,8 @@ import {
   Loader2,
   FileSpreadsheet,
   Upload,
-  ChevronDown
+  ChevronDown,
+  Download
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas-pro';
@@ -154,6 +155,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
   const [isExportingPng, setIsExportingPng] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [showJpgMenu, setShowJpgMenu] = useState(false);
+  const [isFormatModalOpen, setIsFormatModalOpen] = useState(false);
 
   // Editable header fields directly in report
   const [modalCompanyLogo, setModalCompanyLogo] = useState<string>(calculation.companyLogo || '');
@@ -563,6 +565,19 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                 </button>
               )}
 
+              {/* Pilihan Format Unduh Dialog Trigger */}
+              <button
+                type="button"
+                id="btn-choose-format-top"
+                onClick={() => setIsFormatModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-3 py-2 text-xs font-bold text-white transition shadow-xs"
+                title="Pilih format unduh: PDF, JPEG, atau PNG"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Pilihan Format Unduh</span>
+                <span className="sm:hidden">Format</span>
+              </button>
+
               {/* Download PDF (A4) */}
               <button
                 id="btn-download-pdf-a4"
@@ -576,7 +591,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                 ) : (
                   <FileText className="w-3.5 h-3.5" />
                 )}
-                <span>Download PDF (A4)</span>
+                <span>PDF (A4)</span>
               </button>
 
               {/* Download JPG with Dropdown Options */}
@@ -594,7 +609,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                     ) : (
                       <ImageIcon className="w-3.5 h-3.5" />
                     )}
-                    <span>Download JPG</span>
+                    <span>JPEG</span>
                   </button>
                   <button
                     id="btn-toggle-jpg-options"
@@ -618,7 +633,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                     >
                       <span className="font-bold text-white flex items-center gap-1.5">
                         <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
-                        JPG Format A4 (Sesuai PDF)
+                        JPEG Format A4 (Sesuai PDF)
                       </span>
                       <span className="text-[10px] text-slate-400 mt-0.5">
                         Diunduh per lembar A4, sama persis dan konsisten dengan tampilan PDF
@@ -630,7 +645,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                     >
                       <span className="font-bold text-white flex items-center gap-1.5">
                         <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
-                        JPG 1 Gambar Utuh (Full BOM)
+                        JPEG 1 Gambar Utuh (Full BOM)
                       </span>
                       <span className="text-[10px] text-slate-400 mt-0.5">
                         Seluruh laporan dalam 1 berkas gambar memanjang tanpa terpotong
@@ -645,13 +660,13 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                 id="btn-download-png"
                 onClick={handleDownloadPng}
                 disabled={isExportingPng}
-                className="hidden md:inline-flex items-center gap-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 px-2.5 py-2 text-xs font-semibold text-slate-200 border border-slate-700 transition shadow-xs disabled:opacity-50"
-                title="Unduh berkas gambar PNG resolusi tinggi"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-700 hover:bg-indigo-600 px-3 py-2 text-xs font-bold text-white transition shadow-xs disabled:opacity-50"
+                title="Unduh berkas gambar PNG resolusi tinggi tanpa kompresi"
               >
                 {isExportingPng ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
-                  <ImageIcon className="w-3.5 h-3.5 text-blue-400" />
+                  <ImageIcon className="w-3.5 h-3.5 text-indigo-200" />
                 )}
                 <span>PNG</span>
               </button>
@@ -1022,6 +1037,16 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
 
           <div className="flex flex-wrap items-center gap-2">
             <button
+              id="btn-choose-format-bottom"
+              onClick={() => setIsFormatModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-3.5 py-2.5 text-xs font-bold text-white transition shadow-sm"
+              title="Buka pilihan format unduh dokumen"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Pilihan Format (PDF / JPEG / PNG)</span>
+            </button>
+
+            <button
               id="btn-download-pdf-a4-bottom"
               onClick={handleDownloadPdfA4}
               disabled={isExportingPdf}
@@ -1033,7 +1058,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
               ) : (
                 <FileText className="w-3.5 h-3.5" />
               )}
-              <span>Download PDF (A4)</span>
+              <span>PDF (A4)</span>
             </button>
 
             <button
@@ -1048,34 +1073,187 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
               ) : (
                 <ImageIcon className="w-3.5 h-3.5" />
               )}
-              <span>Download JPG (A4 Sesuai PDF)</span>
-            </button>
-
-            <button
-              id="btn-download-jpg-full-bottom"
-              onClick={() => handleDownloadJpg('full')}
-              disabled={isExportingJpg}
-              className="hidden sm:inline-flex items-center gap-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 px-3 py-2.5 text-xs font-bold text-slate-200 border border-slate-700 transition shadow-xs disabled:opacity-50"
-              title="Unduh 1 file gambar utuh memanjang tanpa terpotong"
-            >
-              <ImageIcon className="w-3.5 h-3.5 text-amber-400" />
-              <span>JPG Full Utuh</span>
+              <span>JPEG</span>
             </button>
 
             <button
               id="btn-download-png-bottom"
               onClick={handleDownloadPng}
               disabled={isExportingPng}
-              className="hidden md:inline-flex items-center gap-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 px-3 py-2.5 text-xs font-bold text-slate-200 border border-slate-700 transition shadow-xs disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-700 hover:bg-indigo-600 px-3.5 py-2.5 text-xs font-bold text-white transition shadow-xs disabled:opacity-50"
+              title="Unduh gambar PNG resolusi tinggi tanpa kompresi"
             >
               {isExportingPng ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <ImageIcon className="w-3.5 h-3.5 text-blue-400" />
+                <ImageIcon className="w-3.5 h-3.5 text-indigo-200" />
               )}
               <span>PNG</span>
             </button>
           </div>
+        </div>
+
+        {/* Modal Dialog Pilihan Format Unduh Laporan (PDF / JPEG / PNG / CSV) */}
+        {isFormatModalOpen && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+            <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-100 text-blue-900">
+                    <Download className="w-5 h-5 text-blue-700" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">
+                      Pilihan Format Unduh Laporan Consumption
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Pilih format berkas laporan yang ingin Anda simpan ke perangkat:
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsFormatModalOpen(false)}
+                  className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                {/* 1. Format PDF */}
+                <div
+                  onClick={() => {
+                    setIsFormatModalOpen(false);
+                    handleDownloadPdfA4();
+                  }}
+                  className="cursor-pointer rounded-xl border-2 border-slate-200 hover:border-rose-500 hover:bg-rose-50/40 p-3.5 transition flex flex-col justify-between group shadow-2xs"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+                        <FileText className="w-4 h-4 text-rose-600" />
+                        Dokumen PDF (.pdf)
+                      </span>
+                      <span className="rounded-md bg-rose-100 text-rose-800 px-1.5 py-0.2 text-[9px] font-bold">
+                        Standar A4
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                      Format resmi multi-halaman A4 bebas terpotong, siap dicetak fisik atau dikirim ke instansi / pimpinan.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="mt-3 w-full py-1.5 rounded-lg bg-rose-600 text-white font-bold text-xs group-hover:bg-rose-700 transition"
+                  >
+                    Unduh PDF
+                  </button>
+                </div>
+
+                {/* 2. Format JPEG */}
+                <div
+                  onClick={() => {
+                    setIsFormatModalOpen(false);
+                    handleDownloadJpg('a4_pages');
+                  }}
+                  className="cursor-pointer rounded-xl border-2 border-slate-200 hover:border-amber-500 hover:bg-amber-50/40 p-3.5 transition flex flex-col justify-between group shadow-2xs"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+                        <ImageIcon className="w-4 h-4 text-amber-600" />
+                        Gambar JPEG (.jpg)
+                      </span>
+                      <span className="rounded-md bg-amber-100 text-amber-800 px-1.5 py-0.2 text-[9px] font-bold">
+                        Foto Ringan
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                      Format gambar standar beresolusi tinggi, praktis dibagikan cepat via WhatsApp, Telegram, atau presentasi.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="mt-3 w-full py-1.5 rounded-lg bg-amber-600 text-white font-bold text-xs group-hover:bg-amber-700 transition"
+                  >
+                    Unduh JPEG
+                  </button>
+                </div>
+
+                {/* 3. Format PNG */}
+                <div
+                  onClick={() => {
+                    setIsFormatModalOpen(false);
+                    handleDownloadPng();
+                  }}
+                  className="cursor-pointer rounded-xl border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/40 p-3.5 transition flex flex-col justify-between group shadow-2xs"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+                        <ImageIcon className="w-4 h-4 text-indigo-600" />
+                        Gambar PNG (.png)
+                      </span>
+                      <span className="rounded-md bg-indigo-100 text-indigo-800 px-1.5 py-0.2 text-[9px] font-bold">
+                        Resolusi Tinggi
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                      Format gambar jernih tanpa kompresi buram, teks dan garis tabel tetap tajam saat di-zoom.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="mt-3 w-full py-1.5 rounded-lg bg-indigo-700 text-white font-bold text-xs group-hover:bg-indigo-800 transition"
+                  >
+                    Unduh PNG
+                  </button>
+                </div>
+
+                {/* 4. Format CSV */}
+                <div
+                  onClick={() => {
+                    setIsFormatModalOpen(false);
+                    handleDownloadCsv();
+                  }}
+                  className="cursor-pointer rounded-xl border-2 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/40 p-3.5 transition flex flex-col justify-between group shadow-2xs"
+                >
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                        Excel / CSV (.csv)
+                      </span>
+                      <span className="rounded-md bg-emerald-100 text-emerald-800 px-1.5 py-0.2 text-[9px] font-bold">
+                        Tabel Data
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                      Format data tabel spreadsheet mentah untuk pengolahan lebih lanjut di Microsoft Excel atau Google Sheets.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="mt-3 w-full py-1.5 rounded-lg bg-emerald-700 text-white font-bold text-xs group-hover:bg-emerald-800 transition"
+                  >
+                    Unduh CSV
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsFormatModalOpen(false)}
+                  className="rounded-xl border border-slate-300 px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
+                >
+                  Batal / Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         </div>
       </div>
     </div>

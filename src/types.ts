@@ -63,6 +63,7 @@ export interface ProductCostingRecord {
   id: string;
   costingNumber: string;
   title: string;
+  companyName?: string; // Nama perusahaan kop surat
   productId: string;
   productName: string;
   productCode: string;

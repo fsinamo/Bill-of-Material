@@ -181,10 +181,10 @@ export const SavedCalculationsView: React.FC<SavedCalculationsViewProps> = ({
                   <button
                     onClick={() => onPrintCalculation(calc)}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs"
-                    title="Cetak format PDF resmi"
+                    title="Cetak & Unduh Dokumen (PDF, JPEG, PNG)"
                   >
                     <Printer className="w-3.5 h-3.5 text-slate-600" />
-                    <span>Cetak PDF</span>
+                    <span>Cetak / Unduh (PDF, JPEG, PNG)</span>
                   </button>
 
                   <button
