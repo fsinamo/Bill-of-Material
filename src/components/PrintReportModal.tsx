@@ -1254,7 +1254,6 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
             </div>
           </div>
         )}
-        </div>
       </div>
     </div>
   );

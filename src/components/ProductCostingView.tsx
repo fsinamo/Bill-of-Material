@@ -10,6 +10,7 @@ import {
 import { storageService } from '../services/storageService';
 import { companyProfile } from '../data/defaultData';
 import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 import {
   Coins,
   Package,
@@ -34,7 +35,10 @@ import {
   RotateCw,
   X,
   Scissors,
-  Wrench
+  Wrench,
+  ImageIcon,
+  Loader2,
+  Building2,
 } from 'lucide-react';
 
 interface ProductCostingViewProps {
@@ -72,6 +76,9 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   }, [initialProductId, products]);
 
   const [orderQuantity, setOrderQuantity] = useState<number>(1000);
+  const [companyName, setCompanyName] = useState<string>(
+    companyProfile.companyName || 'PT. GARMENT PRESISI NUSANTARA'
+  );
   const [costingNumber, setCostingNumber] = useState<string>(
     `CST-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`
   );
@@ -85,6 +92,12 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   const [notes, setNotes] = useState<string>(
     'Estimasi biaya komponen accessories dan ongkos jasa pengerjaan untuk penentuan HPP.'
   );
+
+  // Format selection modal & export loading states
+  const [isFormatModalOpen, setIsFormatModalOpen] = useState(false);
+  const [isExportingJpg, setIsExportingJpg] = useState(false);
+  const [isExportingPng, setIsExportingPng] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   // Markup & Profit Margin Simulator
   const [targetMarkupPercent, setTargetMarkupPercent] = useState<number>(25);
@@ -426,6 +439,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
       id: targetId,
       costingNumber,
       title: title.trim() || `Costing ${currentProduct.name}`,
+      companyName: companyName.trim() || companyProfile.companyName || 'PT. GARMENT PRESISI NUSANTARA',
       productId: currentProduct.id,
       productName: currentProduct.name,
       productCode: currentProduct.code,
@@ -470,6 +484,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
       id: newId,
       costingNumber: finalNum,
       title: finalTitle,
+      companyName: companyName.trim() || companyProfile.companyName || 'PT. GARMENT PRESISI NUSANTARA',
       productId: currentProduct.id,
       productName: currentProduct.name,
       productCode: currentProduct.code,
@@ -514,6 +529,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     setOrderQuantity(rec.orderQuantity);
     setCostingNumber(rec.costingNumber);
     setTitle(rec.title);
+    if (rec.companyName) setCompanyName(rec.companyName);
     setCalculationDate(rec.calculationDate);
     setNotes(rec.notes || '');
     if (rec.targetMarkupPercent !== undefined) setTargetMarkupPercent(rec.targetMarkupPercent);
@@ -527,10 +543,11 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   const handleExportCsv = () => {
     let csv = 'data:text/csv;charset=utf-8,';
     csv += `LAPORAN PRODUCT COSTING (HPP ACCESSORIES & JASA)\n`;
-    csv += `Perusahaan,${companyProfile.companyName || 'CV. RAVINA'}\n`;
+    csv += `Perusahaan,${companyName || companyProfile.companyName || 'PT. GARMENT PRESISI NUSANTARA'}\n`;
     csv += `No Dokumen Costing,${costingNumber}\n`;
     csv += `Nama Produk,${currentProduct?.name}\n`;
     csv += `Kode Produk,${currentProduct?.code}\n`;
+    csv += `Nama Buyer / Pemesan,${buyerName || '-'}\n`;
     csv += `Jumlah Pesanan,${orderQuantity} Pcs\n`;
     csv += `Tanggal,${calculationDate}\n\n`;
 
@@ -568,20 +585,24 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
 
   // Export to PDF (A4 format)
   const handleExportPdf = () => {
-    const pdf = new jsPDF({
-      orientation: 'portrait',
-      unit: 'mm',
-      format: 'a4',
-    });
+    setIsExportingPdf(true);
+    setIsFormatModalOpen(false);
+    setNotice('Menyiapkan berkas PDF format A4...');
+    try {
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
 
-    const margin = 15;
-    let y = 18;
+      const margin = 15;
+      let y = 18;
 
-    // Header Letterhead
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(13);
-    pdf.setTextColor(20, 30, 60);
-    pdf.text(companyProfile.companyName || 'CV. RAVINA', margin, y);
+      // Header Letterhead
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(13);
+      pdf.setTextColor(20, 30, 60);
+      pdf.text(companyName || companyProfile.companyName || 'PT. GARMENT PRESISI NUSANTARA', margin, y);
     y += 5;
 
     pdf.setFontSize(9.5);
@@ -780,6 +801,77 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     pdf.save(`Product_Costing_${safeNumber}.pdf`);
     setNotice(`Berhasil mengunduh PDF: Product_Costing_${safeNumber}.pdf`);
     setTimeout(() => setNotice(null), 3500);
+  } catch (err) {
+    console.error('Gagal generate PDF:', err);
+    setNotice('Gagal membuat berkas PDF.');
+    setTimeout(() => setNotice(null), 3500);
+  } finally {
+    setIsExportingPdf(false);
+  }
+};
+
+  // Capture canvas for JPEG and PNG downloads
+  const captureCostingCanvas = async (): Promise<HTMLCanvasElement> => {
+    const el = document.getElementById('product-costing-printable-sheet');
+    if (!el) throw new Error('Elemen lembar costing tidak ditemukan');
+    return await html2canvas(el, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+    });
+  };
+
+  // Export as high-resolution JPEG (.jpg)
+  const handleExportJpg = async () => {
+    setIsExportingJpg(true);
+    setIsFormatModalOpen(false);
+    setNotice('Menyiapkan berkas JPEG resolusi tinggi...');
+    try {
+      const canvas = await captureCostingCanvas();
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      const link = document.createElement('a');
+      const safeNumber = costingNumber.replace(/[^a-zA-Z0-9-_]/g, '_');
+      link.href = imgData;
+      link.download = `Product_Costing_${safeNumber}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setNotice(`Berhasil mengunduh gambar JPEG: Product_Costing_${safeNumber}.jpg`);
+      setTimeout(() => setNotice(null), 3500);
+    } catch (err) {
+      console.error('Gagal generate JPEG:', err);
+      setNotice('Gagal membuat gambar JPEG.');
+      setTimeout(() => setNotice(null), 3500);
+    } finally {
+      setIsExportingJpg(false);
+    }
+  };
+
+  // Export as lossless PNG (.png)
+  const handleExportPng = async () => {
+    setIsExportingPng(true);
+    setIsFormatModalOpen(false);
+    setNotice('Menyiapkan berkas PNG resolusi tinggi tanpa kompresi...');
+    try {
+      const canvas = await captureCostingCanvas();
+      const imgData = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      const safeNumber = costingNumber.replace(/[^a-zA-Z0-9-_]/g, '_');
+      link.href = imgData;
+      link.download = `Product_Costing_${safeNumber}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setNotice(`Berhasil mengunduh gambar PNG: Product_Costing_${safeNumber}.png`);
+      setTimeout(() => setNotice(null), 3500);
+    } catch (err) {
+      console.error('Gagal generate PNG:', err);
+      setNotice('Gagal membuat gambar PNG.');
+      setTimeout(() => setNotice(null), 3500);
+    } finally {
+      setIsExportingPng(false);
+    }
   };
 
   // Master lists filtered
@@ -1051,23 +1143,39 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                 />
               </div>
 
-              {/* Judul & Buyer */}
-              <div className="md:col-span-7 space-y-1">
-                <label className="block font-semibold text-slate-700">Judul / Keterangan Analisis Biaya</label>
+              {/* Nama Perusahaan & Buyer */}
+              <div className="md:col-span-6 space-y-1">
+                <label className="block font-semibold text-slate-700 flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5 text-blue-700" />
+                  <span>Nama Perusahaan / Produsen</span> <span className="text-rose-500">*</span>
+                </label>
                 <input
                   type="text"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-800 outline-hidden focus:border-amber-600 text-xs"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  placeholder="Contoh: PT. GARMENT PRESISI NUSANTARA"
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 font-semibold outline-hidden focus:border-amber-600 focus:ring-1 focus:ring-amber-600 text-xs"
                 />
               </div>
 
-              <div className="md:col-span-5 space-y-1">
+              <div className="md:col-span-6 space-y-1">
                 <label className="block font-semibold text-slate-700">Nama Buyer / Pemesan</label>
                 <input
                   type="text"
                   value={buyerName}
                   onChange={(e) => setBuyerName(e.target.value)}
+                  placeholder="Contoh: MABES TNI / KEMHAN RI"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-800 outline-hidden focus:border-amber-600 text-xs"
+                />
+              </div>
+
+              {/* Judul Analisis Biaya */}
+              <div className="md:col-span-12 space-y-1">
+                <label className="block font-semibold text-slate-700">Judul / Keterangan Analisis Biaya</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-slate-800 outline-hidden focus:border-amber-600 text-xs"
                 />
               </div>
@@ -1565,24 +1673,70 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {/* Tombol Pilihan Format Modal */}
+              <button
+                id="btn-choose-costing-format"
+                onClick={() => setIsFormatModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-3.5 py-2.5 text-xs font-bold text-white transition shadow-sm"
+                title="Buka pilihan format unduh dokumen costing (PDF, JPEG, PNG, CSV)"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Pilihan Format (PDF / JPEG / PNG)</span>
+              </button>
+
               <button
                 id="btn-export-costing-pdf"
                 onClick={handleExportPdf}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 px-3.5 py-2.5 text-xs font-bold text-white transition shadow-xs"
+                disabled={isExportingPdf}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 px-3.5 py-2.5 text-xs font-bold text-white transition shadow-xs disabled:opacity-50"
                 title="Unduh laporan lembar costing format PDF A4"
               >
-                <FileText className="w-3.5 h-3.5" />
-                <span>Download PDF (A4)</span>
+                {isExportingPdf ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <FileText className="w-3.5 h-3.5" />
+                )}
+                <span>PDF (A4)</span>
+              </button>
+
+              <button
+                id="btn-export-costing-jpeg"
+                onClick={handleExportJpg}
+                disabled={isExportingJpg}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 px-3 py-2.5 text-xs font-bold text-white transition shadow-xs disabled:opacity-50"
+                title="Unduh berkas gambar JPEG resolusi tinggi"
+              >
+                {isExportingJpg ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <ImageIcon className="w-3.5 h-3.5" />
+                )}
+                <span>JPEG</span>
+              </button>
+
+              <button
+                id="btn-export-costing-png"
+                onClick={handleExportPng}
+                disabled={isExportingPng}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-700 hover:bg-indigo-600 px-3 py-2.5 text-xs font-bold text-white transition shadow-xs disabled:opacity-50"
+                title="Unduh berkas gambar PNG tanpa kompresi"
+              >
+                {isExportingPng ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <ImageIcon className="w-3.5 h-3.5 text-indigo-200" />
+                )}
+                <span>PNG</span>
               </button>
 
               <button
                 id="btn-export-costing-csv"
                 onClick={handleExportCsv}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 px-3.5 py-2.5 text-xs font-semibold text-slate-200 border border-slate-700 transition shadow-xs"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 px-3 py-2.5 text-xs font-semibold text-slate-200 border border-slate-700 transition shadow-xs"
                 title="Unduh lembar costing dalam format CSV / Excel"
               >
                 <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Export CSV</span>
+                <span>CSV</span>
               </button>
             </div>
           </div>
@@ -1819,6 +1973,408 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal Dialog Pilihan Format Unduh Laporan Product Costing (PDF / JPEG / PNG / CSV) */}
+      {isFormatModalOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl border border-slate-200 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-100 text-amber-900">
+                  <Download className="w-5 h-5 text-amber-700" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">
+                    Pilihan Format Unduh Laporan Product Costing
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Pilih format berkas costing yang ingin Anda unduh ke perangkat:
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFormatModalOpen(false)}
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              {/* 1. Format PDF */}
+              <div
+                onClick={handleExportPdf}
+                className="cursor-pointer rounded-xl border-2 border-slate-200 hover:border-rose-500 hover:bg-rose-50/40 p-3.5 transition flex flex-col justify-between group shadow-2xs"
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+                      <FileText className="w-4 h-4 text-rose-600" />
+                      Dokumen PDF (.pdf)
+                    </span>
+                    <span className="rounded-md bg-rose-100 text-rose-800 px-1.5 py-0.2 text-[9px] font-bold">
+                      Standar A4
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    Format resmi standar A4 siap cetak atau dikirim ke direksi dan pihak eksternal / buyer.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="mt-3 w-full py-1.5 rounded-lg bg-rose-600 text-white font-bold text-xs group-hover:bg-rose-700 transition"
+                >
+                  Unduh PDF
+                </button>
+              </div>
+
+              {/* 2. Format JPEG */}
+              <div
+                onClick={handleExportJpg}
+                className="cursor-pointer rounded-xl border-2 border-slate-200 hover:border-amber-500 hover:bg-amber-50/40 p-3.5 transition flex flex-col justify-between group shadow-2xs"
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+                      <ImageIcon className="w-4 h-4 text-amber-600" />
+                      Gambar JPEG (.jpg)
+                    </span>
+                    <span className="rounded-md bg-amber-100 text-amber-800 px-1.5 py-0.2 text-[9px] font-bold">
+                      Foto Ringan
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    Format gambar standar beresolusi tinggi, sangat praktis dibagikan via WhatsApp atau presentasi.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="mt-3 w-full py-1.5 rounded-lg bg-amber-600 text-white font-bold text-xs group-hover:bg-amber-700 transition"
+                >
+                  Unduh JPEG
+                </button>
+              </div>
+
+              {/* 3. Format PNG */}
+              <div
+                onClick={handleExportPng}
+                className="cursor-pointer rounded-xl border-2 border-slate-200 hover:border-indigo-500 hover:bg-indigo-50/40 p-3.5 transition flex flex-col justify-between group shadow-2xs"
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+                      <ImageIcon className="w-4 h-4 text-indigo-600" />
+                      Gambar PNG (.png)
+                    </span>
+                    <span className="rounded-md bg-indigo-100 text-indigo-800 px-1.5 py-0.2 text-[9px] font-bold">
+                      Resolusi Tinggi
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    Format gambar jernih tanpa kompresi buram, teks rincian dan angka tetap tajam saat di-zoom.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="mt-3 w-full py-1.5 rounded-lg bg-indigo-700 text-white font-bold text-xs group-hover:bg-indigo-800 transition"
+                >
+                  Unduh PNG
+                </button>
+              </div>
+
+              {/* 4. Format CSV */}
+              <div
+                onClick={() => {
+                  setIsFormatModalOpen(false);
+                  handleExportCsv();
+                }}
+                className="cursor-pointer rounded-xl border-2 border-slate-200 hover:border-emerald-500 hover:bg-emerald-50/40 p-3.5 transition flex flex-col justify-between group shadow-2xs"
+              >
+                <div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                      Excel / CSV (.csv)
+                    </span>
+                    <span className="rounded-md bg-emerald-100 text-emerald-800 px-1.5 py-0.2 text-[9px] font-bold">
+                      Tabel Data
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    Format data spreadsheet mentah untuk pengolahan lebih lanjut di Microsoft Excel atau Google Sheets.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="mt-3 w-full py-1.5 rounded-lg bg-emerald-700 text-white font-bold text-xs group-hover:bg-emerald-800 transition"
+                >
+                  Unduh CSV
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsFormatModalOpen(false)}
+                className="rounded-xl border border-slate-300 px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 transition"
+              >
+                Batal / Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hidden printable A4 sheet container for high-resolution JPEG and PNG export */}
+      <div className="fixed -left-[9999px] top-0 pointer-events-none" aria-hidden="true">
+        <div
+          id="product-costing-printable-sheet"
+          className="w-[820px] bg-white p-10 text-slate-900 border border-slate-300"
+          style={{ boxSizing: 'border-box', fontFamily: 'system-ui, -apple-system, sans-serif' }}
+        >
+          {/* Letterhead */}
+          <div className="border-b-2 border-slate-900 pb-4 flex items-start justify-between">
+            <div>
+              <h1 className="text-xl font-black text-slate-900 tracking-tight">
+                {companyName || companyProfile.companyName || 'PT. GARMENT PRESISI NUSANTARA'}
+              </h1>
+              <p className="text-xs font-bold text-slate-600 uppercase tracking-wider mt-0.5">
+                LAPORAN PRODUCT COSTING • HPP ACCESSORIES & BIAYA JASA
+              </p>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                {companyProfile.companyAddress || 'Kawasan Industri Tekstil, Jawa Barat'}
+              </p>
+            </div>
+            <div className="text-right">
+              <span className="inline-block rounded-md bg-amber-100 text-amber-800 px-2 py-0.5 text-[10px] font-black uppercase">
+                Product Costing
+              </span>
+              <p className="text-[10px] font-mono text-slate-500 mt-1">
+                Dicetak: {new Date().toLocaleDateString('id-ID')}
+              </p>
+            </div>
+          </div>
+
+          {/* Meta Info Grid */}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 py-4 text-xs border-b border-slate-200">
+            <div>
+              <span className="text-slate-500">No Dokumen Costing:</span>{' '}
+              <strong className="font-mono text-slate-900">{costingNumber}</strong>
+            </div>
+            <div>
+              <span className="text-slate-500">Tanggal:</span>{' '}
+              <strong className="text-slate-900">{calculationDate}</strong>
+            </div>
+            <div>
+              <span className="text-slate-500">Produk:</span>{' '}
+              <strong className="text-slate-900">{currentProduct?.name} ({currentProduct?.code})</strong>
+            </div>
+            <div>
+              <span className="text-slate-500">Jumlah Pesanan (Batch):</span>{' '}
+              <strong className="font-mono text-slate-900">{orderQuantity.toLocaleString('id-ID')} Pcs</strong>
+            </div>
+            <div>
+              <span className="text-slate-500">Nama Buyer / Pemesan:</span>{' '}
+              <strong className="text-slate-900">{buyerName || '-'}</strong>
+            </div>
+            <div>
+              <span className="text-slate-500">Judul / Catatan:</span>{' '}
+              <strong className="text-slate-900">{title}</strong>
+            </div>
+          </div>
+
+          {/* Tabel 1: Accessories */}
+          <div className="mt-5">
+            <h2 className="text-xs font-bold text-slate-900 uppercase mb-2">
+              1. Rincian Komponen Accessories
+            </h2>
+            <table className="w-full text-left border-collapse text-[11px]">
+              <thead>
+                <tr className="bg-slate-100 text-slate-700 border-y border-slate-300">
+                  <th className="py-1.5 px-2 font-bold w-8">No</th>
+                  <th className="py-1.5 px-2 font-bold">Nama Komponen</th>
+                  <th className="py-1.5 px-2 font-bold">Sumber / Keterangan</th>
+                  <th className="py-1.5 px-2 font-bold text-right">Harga Satuan</th>
+                  <th className="py-1.5 px-2 font-bold text-center">Pemakaian / Pcs</th>
+                  <th className="py-1.5 px-2 font-bold text-right">Biaya / Pcs</th>
+                  <th className="py-1.5 px-2 font-bold text-right">Total Batch</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {accessoryItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-2 px-2 text-center text-slate-400 italic">
+                      Tidak ada komponen accessories
+                    </td>
+                  </tr>
+                ) : (
+                  accessoryItems.map((item, idx) => (
+                    <tr key={idx}>
+                      <td className="py-1.5 px-2 text-slate-500">{idx + 1}</td>
+                      <td className="py-1.5 px-2 font-semibold text-slate-900">{item.accessoryName}</td>
+                      <td className="py-1.5 px-2 text-slate-500">{item.notes || '-'}</td>
+                      <td className="py-1.5 px-2 font-mono text-right text-slate-700">
+                        Rp {item.unitPrice.toLocaleString('id-ID', { maximumFractionDigits: 1 })}
+                      </td>
+                      <td className="py-1.5 px-2 font-mono text-center text-slate-700">{item.usageQtyPerProduct}</td>
+                      <td className="py-1.5 px-2 font-mono font-bold text-right text-slate-900">
+                        Rp {item.totalCostPerProduct.toLocaleString('id-ID', { maximumFractionDigits: 1 })}
+                      </td>
+                      <td className="py-1.5 px-2 font-mono text-right text-slate-700">
+                        Rp {item.totalCostBatch.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                      </td>
+                    </tr>
+                  ))
+                )}
+                <tr className="bg-slate-50 font-bold border-t border-slate-300">
+                  <td colSpan={5} className="py-2 px-2 text-slate-800 text-right">
+                    Subtotal Biaya Accessories:
+                  </td>
+                  <td className="py-2 px-2 font-mono text-right text-slate-900">
+                    Rp {totalAccessoriesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="py-2 px-2 font-mono text-right text-amber-900">
+                    Rp {totalAccessoriesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Tabel 2: Jasa */}
+          <div className="mt-5">
+            <h2 className="text-xs font-bold text-slate-900 uppercase mb-2">
+              2. Rincian Ongkos Jasa Pengerjaan
+            </h2>
+            <table className="w-full text-left border-collapse text-[11px]">
+              <thead>
+                <tr className="bg-indigo-50 text-indigo-900 border-y border-indigo-200">
+                  <th className="py-1.5 px-2 font-bold w-8">No</th>
+                  <th className="py-1.5 px-2 font-bold">Nama Jasa / Pengerjaan</th>
+                  <th className="py-1.5 px-2 font-bold">Keterangan</th>
+                  <th className="py-1.5 px-2 font-bold text-right">Tarif Satuan</th>
+                  <th className="py-1.5 px-2 font-bold text-center">Jumlah / Pcs</th>
+                  <th className="py-1.5 px-2 font-bold text-right">Biaya Jasa / Pcs</th>
+                  <th className="py-1.5 px-2 font-bold text-right">Total Batch</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {serviceItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-2 px-2 text-center text-slate-400 italic">
+                      Tidak ada komponen jasa pengerjaan
+                    </td>
+                  </tr>
+                ) : (
+                  serviceItems.map((item, idx) => (
+                    <tr key={idx}>
+                      <td className="py-1.5 px-2 text-slate-500">{idx + 1}</td>
+                      <td className="py-1.5 px-2 font-semibold text-slate-900">{item.accessoryName}</td>
+                      <td className="py-1.5 px-2 text-slate-500">{item.notes || 'Jasa Pengerjaan'}</td>
+                      <td className="py-1.5 px-2 font-mono text-right text-slate-700">
+                        Rp {item.unitPrice.toLocaleString('id-ID', { maximumFractionDigits: 1 })}
+                      </td>
+                      <td className="py-1.5 px-2 font-mono text-center text-slate-700">{item.usageQtyPerProduct}</td>
+                      <td className="py-1.5 px-2 font-mono font-bold text-right text-indigo-950">
+                        Rp {item.totalCostPerProduct.toLocaleString('id-ID', { maximumFractionDigits: 1 })}
+                      </td>
+                      <td className="py-1.5 px-2 font-mono text-right text-slate-700">
+                        Rp {item.totalCostBatch.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                      </td>
+                    </tr>
+                  ))
+                )}
+                <tr className="bg-indigo-50/60 font-bold border-t border-indigo-200">
+                  <td colSpan={5} className="py-2 px-2 text-indigo-900 text-right">
+                    Subtotal Biaya Jasa:
+                  </td>
+                  <td className="py-2 px-2 font-mono text-right text-indigo-950">
+                    Rp {totalServicesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="py-2 px-2 font-mono text-right text-indigo-950">
+                    Rp {totalServicesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Rekapitulasi Summary Box */}
+          <div className="mt-5 p-4 rounded-xl bg-amber-50/70 border border-amber-300">
+            <h3 className="text-xs font-black uppercase text-amber-950 mb-2">
+              Rekapitulasi HPP & Estimasi Harga Jual Rekomendasi
+            </h3>
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="text-slate-600">Subtotal Accessories / Pcs:</span>{' '}
+                <strong className="font-mono text-slate-900">
+                  Rp {totalAccessoriesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </strong>
+              </div>
+              <div>
+                <span className="text-slate-600">Subtotal Jasa / Pcs:</span>{' '}
+                <strong className="font-mono text-indigo-950">
+                  Rp {totalServicesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </strong>
+              </div>
+              <div className="pt-1 border-t border-amber-200">
+                <span className="text-slate-800 font-bold">GRAND TOTAL HPP / Pcs:</span>{' '}
+                <strong className="font-mono text-emerald-950 text-sm">
+                  Rp {totalCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </strong>
+              </div>
+              <div className="pt-1 border-t border-amber-200">
+                <span className="text-slate-800 font-bold">Total Biaya Batch ({orderQuantity} Pcs):</span>{' '}
+                <strong className="font-mono text-emerald-950 text-sm">
+                  Rp {totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                </strong>
+              </div>
+              <div>
+                <span className="text-amber-900 font-semibold">Target Markup Keuntungan:</span>{' '}
+                <strong className="text-amber-950">{targetMarkupPercent}%</strong>
+              </div>
+              <div>
+                <span className="text-amber-900 font-semibold">Rekomendasi Harga Jual:</span>{' '}
+                <strong className="font-mono text-amber-950 text-sm">
+                  Rp {recommendedSellingPricePerUnit.toLocaleString('id-ID', { maximumFractionDigits: 0 })} / Pcs
+                </strong>
+              </div>
+            </div>
+          </div>
+
+          {/* Signatures */}
+          <div className="mt-8 pt-4 border-t border-slate-200 grid grid-cols-3 gap-6 text-center text-xs">
+            <div>
+              <div className="text-slate-500">Dibuat Oleh:</div>
+              <div className="h-14"></div>
+              <div className="font-bold text-slate-900 border-t border-slate-400 pt-1">
+                ( Staff Estimasi Biaya )
+              </div>
+            </div>
+            <div>
+              <div className="text-slate-500">Diperiksa:</div>
+              <div className="h-14"></div>
+              <div className="font-bold text-slate-900 border-t border-slate-400 pt-1">
+                ( Manager Keuangan )
+              </div>
+            </div>
+            <div>
+              <div className="text-slate-500">Disetujui:</div>
+              <div className="h-14"></div>
+              <div className="font-bold text-slate-900 border-t border-slate-400 pt-1">
+                ( Direktur Operasional )
+              </div>
+            </div>
+          </div>
+
+          {/* Sheet Footer */}
+          <div className="mt-6 pt-2 border-t border-slate-200 text-center text-[10px] text-slate-400">
+            Dicetak secara otomatis dari Sistem GarmentPro • {new Date().toLocaleString('id-ID')}
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
