@@ -44,7 +44,37 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
   const [purchasePrice, setPurchasePrice] = useState<number>(1500);
   const [defaultRawMaterialId, setDefaultRawMaterialId] = useState('');
   const [defaultYieldPerUnit, setDefaultYieldPerUnit] = useState<number>(465);
+  const [rawMaterialSize, setRawMaterialSize] = useState('');
+  const [pieceCuttingSize, setPieceCuttingSize] = useState('');
+  const [divisionFormula, setDivisionFormula] = useState('');
+  const [differentSizeNotes, setDifferentSizeNotes] = useState('');
   const [notes, setNotes] = useState('');
+
+  // Mini calculator state for auto-computing division formula
+  const [calcMatLength, setCalcMatLength] = useState<number>(120);
+  const [calcMatWidth, setCalcMatWidth] = useState<number>(36);
+  const [calcCutLength, setCalcCutLength] = useState<number>(3.0);
+  const [calcCutWidth, setCalcCutWidth] = useState<number>(3.0);
+  const [showAutoCalc, setShowAutoCalc] = useState<boolean>(false);
+
+  const handleApplyAutoCalculation = () => {
+    const matArea = calcMatLength * calcMatWidth;
+    const cutArea = calcCutLength * calcCutWidth;
+    if (matArea > 0 && cutArea > 0) {
+      const computedYield = Math.floor(matArea / cutArea);
+      setDefaultYieldPerUnit(computedYield);
+      const usageVal = Number((1 / computedYield).toFixed(6));
+      const matSizeStr = `${calcMatLength} x ${calcMatWidth} cm (${matArea.toLocaleString('id-ID')} cm²)`;
+      const cutSizeStr = `${calcCutLength} x ${calcCutWidth} cm (${cutArea.toFixed(2)} cm²)`;
+      const formulaStr = `${matArea.toLocaleString('id-ID')} cm² ÷ ${cutArea.toFixed(2)} cm² = ${computedYield.toLocaleString('id-ID')} ${unit} / lembar (Pemakaian per pcs: 1 ÷ ${computedYield} = ${usageVal.toLocaleString('id-ID', { minimumFractionDigits: 4, maximumFractionDigits: 6 })} lembar/pcs)`;
+      const diffNotesStr = `Acuan ukuran berbeda: Luas Plat Baru ÷ ${cutArea.toFixed(2)} cm² = Yield Baru`;
+
+      setRawMaterialSize(matSizeStr);
+      setPieceCuttingSize(cutSizeStr);
+      setDivisionFormula(formulaStr);
+      setDifferentSizeNotes(diffNotesStr);
+    }
+  };
 
   const handleOpenNew = (forcedCategory?: AccessoryCategory) => {
     const nextNum = accessories.length + 1;
@@ -57,6 +87,10 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
     setPurchasePrice(initialCat === 'service' ? 12500 : 1500);
     setDefaultRawMaterialId(rawMaterials[0]?.id || '');
     setDefaultYieldPerUnit(400);
+    setRawMaterialSize('120 x 36 cm (4.320 cm²)');
+    setPieceCuttingSize('3.0 x 3.0 cm (9.28 cm²)');
+    setDivisionFormula('4.320 cm² ÷ 9.28 cm² = 465 buah / lembar');
+    setDifferentSizeNotes('Acuan ukuran berbeda: Luas Plat Baru ÷ 9.28 cm² = Yield Baru');
     setNotes('');
     setEditingItem(null);
     setFormSuccessMessage(null);
@@ -73,6 +107,10 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
     setPurchasePrice(a.purchasePrice || 0);
     setDefaultRawMaterialId(a.defaultRawMaterialId || (rawMaterials[0]?.id || ''));
     setDefaultYieldPerUnit(a.defaultYieldPerUnit || 1);
+    setRawMaterialSize(a.rawMaterialSize || '');
+    setPieceCuttingSize(a.pieceCuttingSize || '');
+    setDivisionFormula(a.divisionFormula || '');
+    setDifferentSizeNotes(a.differentSizeNotes || '');
     setNotes(a.notes || '');
     setFormSuccessMessage(null);
     setIsEditing(true);
@@ -108,6 +146,11 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
       purchasePrice: isDirectPrice ? Number(purchasePrice) || 0 : undefined,
       defaultRawMaterialId: category === 'raw_material_based' ? (defaultRawMaterialId || (rawMaterials[0]?.id || '')) : undefined,
       defaultYieldPerUnit: category === 'raw_material_based' ? (Number(defaultYieldPerUnit) || 1) : undefined,
+      materialUsagePerPcs: category === 'raw_material_based' && defaultYieldPerUnit > 0 ? Number((1 / defaultYieldPerUnit).toFixed(6)) : undefined,
+      rawMaterialSize: category === 'raw_material_based' ? rawMaterialSize.trim() : undefined,
+      pieceCuttingSize: category === 'raw_material_based' ? pieceCuttingSize.trim() : undefined,
+      divisionFormula: category === 'raw_material_based' ? divisionFormula.trim() : undefined,
+      differentSizeNotes: category === 'raw_material_based' ? differentSizeNotes.trim() : undefined,
       notes: notes.trim(),
       createdAt: editingItem ? editingItem.createdAt : new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -493,16 +536,164 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
                     </div>
 
                     {/* Live Calculation Display */}
-                    <div className="mt-2 pt-2 border-t border-purple-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <div className="flex items-center gap-1.5 text-slate-700">
-                        <Calculator className="w-3.5 h-3.5 text-purple-600" />
-                        <span>Kalkulasi Harga Modal (Cost):</span>
-                        <span className="font-mono text-slate-600">
-                          Rp {selectedMaterial?.unitPrice?.toLocaleString('id-ID') || 0} ÷ {defaultYieldPerUnit || 1} yield =
-                        </span>
+                    <div className="mt-2 pt-2 border-t border-purple-200/80 space-y-2 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 text-slate-700">
+                          <Calculator className="w-3.5 h-3.5 text-purple-600" />
+                          <span>Kalkulasi Harga Modal (Cost):</span>
+                          <span className="font-mono text-slate-600">
+                            Rp {selectedMaterial?.unitPrice?.toLocaleString('id-ID') || 0} ÷ {defaultYieldPerUnit || 1} yield =
+                          </span>
+                        </div>
+                        <div className="font-mono font-black text-sm text-purple-950 bg-white px-2.5 py-1 rounded-lg border border-purple-200">
+                          Rp {liveCalculatedPrice.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {unit}
+                        </div>
                       </div>
-                      <div className="font-mono font-black text-sm text-purple-950 bg-white px-2.5 py-1 rounded-lg border border-purple-200">
-                        Rp {liveCalculatedPrice.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / {unit}
+
+                      {/* Pemakaian Bahan per Pcs Accessories (1 / Yield) */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/90 p-2.5 border border-purple-200 text-purple-950">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-slate-800">Pemakaian Bahan per Pcs:</span>
+                          <span className="font-mono text-purple-800 font-semibold">
+                            1 {selectedMaterial?.unit || 'Lembar'} ÷ {defaultYieldPerUnit || 1} yield =
+                          </span>
+                        </div>
+                        <div className="font-mono font-black text-xs text-purple-950 bg-purple-100/90 px-2.5 py-1 rounded border border-purple-300">
+                          {((defaultYieldPerUnit || 1) > 0 ? (1 / (defaultYieldPerUnit || 1)).toLocaleString('id-ID', { minimumFractionDigits: 4, maximumFractionDigits: 6 }) : '0')} {selectedMaterial?.unit || 'lembar'} / {unit}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Rincian Angka Pembagian Bahan & Acuan Ukuran Berbeda */}
+                  <div className="sm:col-span-3 rounded-xl bg-purple-50/40 p-4 border border-purple-200/80 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-purple-900">
+                        <Calculator className="w-4 h-4 text-purple-700" />
+                        <span>Angka Pembagian Bahan dengan Hasil & Acuan Ukuran:</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowAutoCalc(!showAutoCalc)}
+                        className="text-[11px] font-bold text-purple-700 hover:text-purple-900 underline flex items-center gap-1"
+                      >
+                        {showAutoCalc ? 'Tutup Kalkulator Otomatis' : '⚡ Buka Kalkulator Dimensi'}
+                      </button>
+                    </div>
+
+                    {showAutoCalc && (
+                      <div className="rounded-lg bg-white p-3 border border-purple-300 text-xs space-y-2 shadow-2xs">
+                        <div className="font-bold text-slate-800 text-[11px]">
+                          Kalkulator Pembagian Dimensi Bahan Baku (Auto-Hitung Hasil / Yield):
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          <div>
+                            <label className="text-[10px] text-slate-500 font-semibold">P. Bahan (cm)</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={calcMatLength}
+                              onChange={(e) => setCalcMatLength(parseFloat(e.target.value) || 0)}
+                              className="w-full rounded border border-slate-300 px-2 py-1 text-slate-800 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-500 font-semibold">L. Bahan (cm)</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={calcMatWidth}
+                              onChange={(e) => setCalcMatWidth(parseFloat(e.target.value) || 0)}
+                              className="w-full rounded border border-slate-300 px-2 py-1 text-slate-800 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-500 font-semibold">P. Potong (cm)</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={calcCutLength}
+                              onChange={(e) => setCalcCutLength(parseFloat(e.target.value) || 0)}
+                              className="w-full rounded border border-slate-300 px-2 py-1 text-slate-800 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] text-slate-500 font-semibold">L. Potong (cm)</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={calcCutWidth}
+                              onChange={(e) => setCalcCutWidth(parseFloat(e.target.value) || 0)}
+                              className="w-full rounded border border-slate-300 px-2 py-1 text-slate-800 text-xs"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-[11px] text-purple-900 font-mono">
+                            Luas Bahan: {(calcMatLength * calcMatWidth).toLocaleString('id-ID')} cm² | Luas Potong: {(calcCutLength * calcCutWidth).toFixed(2)} cm² | Hasil: <strong>{calcCutLength * calcCutWidth > 0 ? Math.floor((calcMatLength * calcMatWidth) / (calcCutLength * calcCutWidth)) : 0} {unit}</strong>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={handleApplyAutoCalculation}
+                            className="px-2.5 py-1 bg-purple-600 text-white rounded text-[11px] font-bold hover:bg-purple-700 transition"
+                          >
+                            Terapkan ke Rumus & Yield
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Ukuran / Dimensi Bahan Baku Acuan
+                        </label>
+                        <input
+                          type="text"
+                          value={rawMaterialSize}
+                          onChange={(e) => setRawMaterialSize(e.target.value)}
+                          placeholder="Contoh: 120 x 36 cm (4.320 cm²) atau 100 meter"
+                          className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-slate-800 bg-white outline-hidden focus:border-purple-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Ukuran Potong per Pcs / Komponen
+                        </label>
+                        <input
+                          type="text"
+                          value={pieceCuttingSize}
+                          onChange={(e) => setPieceCuttingSize(e.target.value)}
+                          placeholder="Contoh: 3.0 x 3.0 cm (9.28 cm²) atau 5 cm"
+                          className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-slate-800 bg-white outline-hidden focus:border-purple-600"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Angka & Rumus Pembagian Bahan dengan Hasil
+                        </label>
+                        <input
+                          type="text"
+                          value={divisionFormula}
+                          onChange={(e) => setDivisionFormula(e.target.value)}
+                          placeholder="Contoh: 4.320 cm² ÷ 9.28 cm² = 465 buah / lembar"
+                          className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-slate-800 bg-white font-mono outline-hidden focus:border-purple-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Acuan Jika Menggunakan Ukuran Bahan Berbeda
+                        </label>
+                        <input
+                          type="text"
+                          value={differentSizeNotes}
+                          onChange={(e) => setDifferentSizeNotes(e.target.value)}
+                          placeholder="Contoh: Acuan: Luas Plat Baru ÷ 9.28 cm² = Yield Baru"
+                          className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-slate-800 bg-white outline-hidden focus:border-purple-600"
+                        />
                       </div>
                     </div>
                   </div>
@@ -669,15 +860,38 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
                             <div className="text-slate-400">Siap pakai langsung rakit</div>
                           </div>
                         ) : (
-                          <div>
+                          <div className="space-y-1">
                             <div className="font-semibold text-slate-800">
                               {mat?.name || 'Bahan Baku Tidak Terdaftar'}
                             </div>
-                            <div className="inline-flex items-center gap-1 text-[11px] text-purple-700 font-mono mt-0.5">
+                            <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-purple-700 font-mono">
                               <span>1 {mat?.unit || 'Lembar'}</span>
                               <ArrowRight className="w-2.5 h-2.5 text-purple-400" />
                               <span className="font-bold">{a.defaultYieldPerUnit || 1} {a.unit}</span>
+                              <span className="text-slate-400">|</span>
+                              <span className="text-purple-950 font-semibold bg-purple-100/80 px-1.5 py-0.5 rounded text-[10px]">
+                                Pemakaian: 1 ÷ {a.defaultYieldPerUnit || 1} = {((a.defaultYieldPerUnit || 1) > 0 ? (1 / (a.defaultYieldPerUnit || 1)).toLocaleString('id-ID', { minimumFractionDigits: 4, maximumFractionDigits: 6 }) : '0')} {mat?.unit || 'lembar'}/pcs
+                              </span>
                             </div>
+
+                            {/* Info Ukuran & Rumus Pembagian */}
+                            {(a.rawMaterialSize || a.pieceCuttingSize) && (
+                              <div className="text-[10px] text-slate-600 bg-slate-100/80 rounded px-1.5 py-0.5 font-mono">
+                                📐 {a.rawMaterialSize ? `Bahan: ${a.rawMaterialSize}` : ''} {a.pieceCuttingSize ? `| Potong: ${a.pieceCuttingSize}` : ''}
+                              </div>
+                            )}
+
+                            {a.divisionFormula && (
+                              <div className="text-[10px] text-purple-900 bg-purple-50 rounded px-1.5 py-0.5 font-mono border border-purple-200/60">
+                                ➗ <strong>Rumus:</strong> {a.divisionFormula}
+                              </div>
+                            )}
+
+                            {a.differentSizeNotes && (
+                              <div className="text-[10px] text-amber-900 bg-amber-50 rounded px-1.5 py-0.5 border border-amber-200/60 font-medium">
+                                💡 <strong>Acuan Ukuran Berbeda:</strong> {a.differentSizeNotes}
+                              </div>
+                            )}
                           </div>
                         )}
                       </td>

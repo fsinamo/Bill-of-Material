@@ -105,22 +105,30 @@ export const storageService = {
     }
     try {
       const parsed: Accessory[] = JSON.parse(raw);
-      // Migrate each item to ensure category is defined
-      const migrated = parsed.map((a) => ({
-        ...a,
-        category: a.category || (a.defaultRawMaterialId ? 'raw_material_based' : 'ready_made'),
-      }));
+      // Migrate each item to ensure category and cutting division properties are defined
+      const migrated: Accessory[] = parsed.map((a): Accessory => {
+        const defaultMatch = INITIAL_ACCESSORIES.find((init) => init.id === a.id);
+        return {
+          ...a,
+          category: a.category || (a.defaultRawMaterialId ? 'raw_material_based' : 'ready_made'),
+          rawMaterialSize: a.rawMaterialSize || defaultMatch?.rawMaterialSize,
+          pieceCuttingSize: a.pieceCuttingSize || defaultMatch?.pieceCuttingSize,
+          divisionFormula: a.divisionFormula || defaultMatch?.divisionFormula,
+          differentSizeNotes: a.differentSizeNotes || defaultMatch?.differentSizeNotes,
+          materialUsagePerPcs: a.materialUsagePerPcs || (a.defaultYieldPerUnit && a.defaultYieldPerUnit > 0 ? Number((1 / a.defaultYieldPerUnit).toFixed(6)) : defaultMatch?.materialUsagePerPcs),
+        };
+      });
       // If no ready-made accessory is present, seed the defaults
       const hasReadyMade = migrated.some((a) => a.category === 'ready_made');
-      let currentList = migrated;
+      let currentList: Accessory[] = migrated;
       if (!hasReadyMade) {
-        const readyDefaults = INITIAL_ACCESSORIES.filter((a) => a.category === 'ready_made');
+        const readyDefaults: Accessory[] = INITIAL_ACCESSORIES.filter((a) => a.category === 'ready_made');
         currentList = [...currentList, ...readyDefaults];
       }
       // If no service / jasa is present, seed default jasa
       const hasService = currentList.some((a) => a.category === 'service');
       if (!hasService) {
-        const serviceDefaults = INITIAL_ACCESSORIES.filter((a) => a.category === 'service');
+        const serviceDefaults: Accessory[] = INITIAL_ACCESSORIES.filter((a) => a.category === 'service');
         if (serviceDefaults.length > 0) {
           currentList = [...currentList, ...serviceDefaults];
         }

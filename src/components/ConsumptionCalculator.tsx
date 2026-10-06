@@ -400,9 +400,10 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
     });
 
     csvContent += `\nRINCIAN ACCESSORIES\n`;
-    csvContent += `Accessories,Kebutuhan/Pcs,Total Buah,Bahan Baku Asal,Yield Buah/Lembar,Kebutuhan Lembar\n`;
+    csvContent += `Accessories,Kebutuhan/Pcs,Total Buah,Bahan Baku Asal,Yield Buah/Lembar,Pemakaian Bahan Satuan (1/Yield),Kebutuhan Lembar\n`;
     details.forEach((d) => {
-      csvContent += `"${d.accessoryName}",${d.qtyPerProduct},${d.totalAccessoryNeeded},"${d.rawMaterialName}",${d.yieldPerUnit},${d.rawMaterialWithAllowance}\n`;
+      const usage = d.yieldPerUnit > 0 ? (1 / d.yieldPerUnit).toFixed(6) : '0';
+      csvContent += `"${d.accessoryName}",${d.qtyPerProduct},${d.totalAccessoryNeeded},"${d.rawMaterialName}",${d.yieldPerUnit},${usage},${d.rawMaterialWithAllowance}\n`;
     });
 
     const encodedUri = encodeURI(csvContent);
@@ -745,7 +746,7 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
                 <th className="py-3 px-3.5 font-bold text-center">Kebutuhan / Pcs</th>
                 <th className="py-3 px-3.5 font-bold text-right">Total Kebutuhan (Buah)</th>
                 <th className="py-3 px-3.5 font-bold">Bahan Baku Yang Dipakai</th>
-                <th className="py-3 px-3.5 font-bold text-right">Yield (Hasil/Lembar)</th>
+                <th className="py-3 px-3.5 font-bold text-right">Yield & Pemakaian Satuan</th>
                 <th className="py-3 px-3.5 font-bold text-center">Susut / Waste %</th>
                 <th className="py-3 px-3.5 font-bold text-right bg-blue-50/50">Pemakaian Bahan (Lembar)</th>
               </tr>
@@ -754,7 +755,21 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
               {details.map((row) => (
                 <tr key={row.accessoryId} className="hover:bg-slate-50/60">
                   <td className="py-3 px-3.5 font-bold text-slate-900">
-                    {row.accessoryName}
+                    <div>{row.accessoryName}</div>
+                    {(row.divisionFormula || row.differentSizeNotes || row.rawMaterialSize) && (
+                      <div className="mt-1 space-y-0.5 text-[10px] font-normal">
+                        {row.divisionFormula && (
+                          <div className="text-purple-800 font-mono bg-purple-50/80 px-1.5 py-0.5 rounded border border-purple-200/50 inline-block">
+                            ➗ {row.divisionFormula}
+                          </div>
+                        )}
+                        {row.differentSizeNotes && (
+                          <div className="text-amber-800 bg-amber-50/80 px-1.5 py-0.5 rounded border border-amber-200/50">
+                            💡 {row.differentSizeNotes}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="py-3 px-3.5 text-center">
                     <input
@@ -792,21 +807,27 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
                     </select>
                   </td>
                   <td className="py-3 px-3.5 text-right font-mono">
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={row.yieldPerUnit}
-                      onChange={(e) =>
-                        handleUpdateRowOverride(
-                          row.accessoryId,
-                          'yieldPerUnit',
-                          parseFloat(e.target.value) || 1
-                        )
-                      }
-                      className="w-16 rounded-md border border-slate-300 px-1.5 py-1 text-right font-mono font-semibold text-slate-800 focus:border-blue-600 outline-hidden"
-                    />
-                    <span className="ml-1 text-[10px] text-slate-400">buah</span>
+                    <div className="flex items-center justify-end">
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={row.yieldPerUnit}
+                        onChange={(e) =>
+                          handleUpdateRowOverride(
+                            row.accessoryId,
+                            'yieldPerUnit',
+                            parseFloat(e.target.value) || 1
+                          )
+                        }
+                        className="w-16 rounded-md border border-slate-300 px-1.5 py-1 text-right font-mono font-semibold text-slate-800 focus:border-blue-600 outline-hidden"
+                      />
+                      <span className="ml-1 text-[10px] text-slate-400">buah</span>
+                    </div>
+                    {/* Pemakaian per Pcs (1 / Yield) */}
+                    <div className="mt-1 text-[10px] font-mono text-purple-900 bg-purple-50/90 rounded px-1.5 py-0.5 border border-purple-200/60 inline-block" title={`Pemakaian per pcs = 1 / ${row.yieldPerUnit}`}>
+                      1÷{row.yieldPerUnit} = {((row.yieldPerUnit > 0 ? (1 / row.yieldPerUnit).toLocaleString('id-ID', { minimumFractionDigits: 4, maximumFractionDigits: 6 }) : '0'))} {row.rawMaterialUnit}
+                    </div>
                   </td>
                   <td className="py-3 px-3.5 text-center">
                     <input

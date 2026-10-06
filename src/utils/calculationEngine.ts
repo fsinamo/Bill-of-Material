@@ -22,12 +22,7 @@ export function calculateConsumption(
     {
       material: RawMaterial;
       totalCalculated: number;
-      breakdown: Array<{
-        accessoryName: string;
-        accessoryQty: number;
-        yieldPerUnit: number;
-        rawMaterialPortion: number;
-      }>;
+      breakdown: RawMaterialSummary['breakdown'];
     }
   > = {};
 
@@ -75,6 +70,7 @@ export function calculateConsumption(
         });
 
     const totalAccessoryNeeded = Math.round(orderQuantity * qtyPerProduct);
+    const materialUsagePerPcs = yieldPerUnit > 0 ? Number((1 / yieldPerUnit).toFixed(6)) : 0;
     const baseRawMaterialNeeded = yieldPerUnit > 0 ? totalAccessoryNeeded / yieldPerUnit : 0;
     const rawMaterialWithAllowance = baseRawMaterialNeeded * (1 + allowancePercent / 100);
 
@@ -88,9 +84,14 @@ export function calculateConsumption(
       rawMaterialSpec: rawMaterial.specification,
       rawMaterialUnit: rawMaterial.unit,
       yieldPerUnit,
+      materialUsagePerPcs,
       rawMaterialCalculated: Number(baseRawMaterialNeeded.toFixed(4)),
       allowancePercent,
       rawMaterialWithAllowance: Number(rawMaterialWithAllowance.toFixed(4)),
+      rawMaterialSize: accessory.rawMaterialSize,
+      pieceCuttingSize: accessory.pieceCuttingSize,
+      divisionFormula: accessory.divisionFormula,
+      differentSizeNotes: accessory.differentSizeNotes,
     };
 
     details.push(detailItem);
@@ -108,7 +109,10 @@ export function calculateConsumption(
       accessoryName: accessory.name,
       accessoryQty: totalAccessoryNeeded,
       yieldPerUnit,
+      materialUsagePerPcs,
       rawMaterialPortion: Number(rawMaterialWithAllowance.toFixed(4)),
+      divisionFormula: accessory.divisionFormula,
+      differentSizeNotes: accessory.differentSizeNotes,
     });
   }
 

@@ -68,6 +68,11 @@ export const INITIAL_ACCESSORIES: Accessory[] = [
     category: 'raw_material_based',
     defaultRawMaterialId: 'bb-kuningan-065',
     defaultYieldPerUnit: 465, // 1 lembar menghasilkan 465 buah (Harga: Rp 285.000 / 465 = Rp 612,90)
+    materialUsagePerPcs: 0.002151, // 1 / 465 lembar per buah
+    rawMaterialSize: '120 x 36 cm (4.320 cm²)',
+    pieceCuttingSize: '3.0 x 3.0 cm (9.28 cm²)',
+    divisionFormula: '4.320 cm² ÷ 9.28 cm² = 465 buah / lembar (1/465 = 0,002151 lembar/buah)',
+    differentSizeNotes: 'Acuan ukuran berbeda: Luas Plat Baru ÷ 9.28 cm² = Yield Baru (Contoh: Plat 100 x 30 cm = 323 buah)',
     notes: 'Komponen buckle kotak depan kopelriem (Olah Plat Kuningan)',
     createdAt: '2026-09-01T08:00:00.000Z',
     updatedAt: '2026-09-01T08:00:00.000Z',
@@ -80,6 +85,11 @@ export const INITIAL_ACCESSORIES: Accessory[] = [
     category: 'raw_material_based',
     defaultRawMaterialId: 'bb-stainless-08',
     defaultYieldPerUnit: 1010, // 1 lembar menghasilkan 1010 buah (Harga: Rp 475.000 / 1010 = Rp 470,30)
+    materialUsagePerPcs: 0.000990, // 1 / 1010 lembar per buah
+    rawMaterialSize: '100 x 50 cm (5.000 cm²)',
+    pieceCuttingSize: '2.2 x 2.2 cm (4.95 cm²)',
+    divisionFormula: '5.000 cm² ÷ 4.95 cm² = 1.010 buah / lembar (1/1.010 = 0,000990 lembar/buah)',
+    differentSizeNotes: 'Acuan ukuran berbeda: Luas Plat Baru ÷ 4.95 cm² = Yield Baru (Contoh: Plat 120 x 50 cm = 1.212 buah)',
     notes: 'Komponen lidah jepit pengunci kopelriem (Olah Plat Stainless)',
     createdAt: '2026-09-01T08:00:00.000Z',
     updatedAt: '2026-09-01T08:00:00.000Z',
@@ -92,6 +102,11 @@ export const INITIAL_ACCESSORIES: Accessory[] = [
     category: 'raw_material_based',
     defaultRawMaterialId: 'bb-kuningan-065',
     defaultYieldPerUnit: 310, // 1 lembar menghasilkan 310 buah (Harga: Rp 285.000 / 310 = Rp 919,35)
+    materialUsagePerPcs: 0.003226, // 1 / 310 lembar per buah
+    rawMaterialSize: '120 x 36 cm (4.320 cm²)',
+    pieceCuttingSize: '3.5 x 4.0 cm (13.93 cm²)',
+    divisionFormula: '4.320 cm² ÷ 13.93 cm² = 310 buah / lembar (1/310 = 0,003226 lembar/buah)',
+    differentSizeNotes: 'Acuan ukuran berbeda: Luas Plat Baru ÷ 13.93 cm² = Yield Baru',
     notes: 'Komponen ring U pengait samping (Olah Plat Kuningan)',
     createdAt: '2026-09-01T08:00:00.000Z',
     updatedAt: '2026-09-01T08:00:00.000Z',
@@ -104,6 +119,11 @@ export const INITIAL_ACCESSORIES: Accessory[] = [
     category: 'raw_material_based',
     defaultRawMaterialId: 'bb-kuningan-065',
     defaultYieldPerUnit: 170, // 1 lembar menghasilkan 170 buah (Harga: Rp 285.000 / 170 = Rp 1.676,47)
+    materialUsagePerPcs: 0.005882, // 1 / 170 lembar per buah
+    rawMaterialSize: '120 x 36 cm (4.320 cm²)',
+    pieceCuttingSize: '5.0 x 5.0 cm (25.41 cm²)',
+    divisionFormula: '4.320 cm² ÷ 25.41 cm² = 170 buah / lembar (1/170 = 0,005882 lembar/buah)',
+    differentSizeNotes: 'Acuan ukuran berbeda: Luas Plat Baru ÷ 25.41 cm² = Yield Baru',
     notes: 'Komponen ujung penjepit gigi tali sabuk (Olah Plat Kuningan)',
     createdAt: '2026-09-01T08:00:00.000Z',
     updatedAt: '2026-09-01T08:00:00.000Z',
@@ -116,6 +136,11 @@ export const INITIAL_ACCESSORIES: Accessory[] = [
     category: 'raw_material_based',
     defaultRawMaterialId: 'bb-kuningan-065',
     defaultYieldPerUnit: 540, // 1 lembar menghasilkan 540 buah (Harga: Rp 285.000 / 540 = Rp 527,78)
+    materialUsagePerPcs: 0.001852, // 1 / 540 lembar per buah
+    rawMaterialSize: '120 x 36 cm (4.320 cm²)',
+    pieceCuttingSize: '2.0 x 4.0 cm (8.00 cm²)',
+    divisionFormula: '4.320 cm² ÷ 8.00 cm² = 540 buah / lembar (1/540 = 0,001852 lembar/buah)',
+    differentSizeNotes: 'Acuan ukuran berbeda: Luas Plat Baru ÷ 8.00 cm² = Yield Baru',
     notes: 'Komponen ujung penjepit tipe U bergigi (Olah Plat Kuningan)',
     createdAt: '2026-09-01T08:00:00.000Z',
     updatedAt: '2026-09-01T08:00:00.000Z',

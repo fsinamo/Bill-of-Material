@@ -189,6 +189,11 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
         rawMaterialName: priceInfo.rawMaterialName,
         rawMaterialUnitPrice: priceInfo.rawMaterialUnitPrice,
         yieldPerUnit: priceInfo.yieldPerUnit,
+        materialUsagePerPcs: priceInfo.yieldPerUnit ? Number((1 / priceInfo.yieldPerUnit).toFixed(6)) : acc.materialUsagePerPcs,
+        rawMaterialSize: acc.rawMaterialSize,
+        pieceCuttingSize: acc.pieceCuttingSize,
+        divisionFormula: acc.divisionFormula,
+        differentSizeNotes: acc.differentSizeNotes,
         unitPrice: priceInfo.unitPrice,
         usageQtyPerProduct,
         totalUsageQty,
@@ -331,6 +336,11 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
       rawMaterialName: priceInfo.rawMaterialName,
       rawMaterialUnitPrice: priceInfo.rawMaterialUnitPrice,
       yieldPerUnit: priceInfo.yieldPerUnit,
+      materialUsagePerPcs: priceInfo.yieldPerUnit ? Number((1 / priceInfo.yieldPerUnit).toFixed(6)) : acc.materialUsagePerPcs,
+      rawMaterialSize: acc.rawMaterialSize,
+      pieceCuttingSize: acc.pieceCuttingSize,
+      divisionFormula: acc.divisionFormula,
+      differentSizeNotes: acc.differentSizeNotes,
       unitPrice: priceInfo.unitPrice,
       usageQtyPerProduct,
       totalUsageQty,
@@ -539,6 +549,92 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     setTimeout(() => setNotice(null), 3000);
   };
 
+  // Mulai Perhitungan Baru untuk Product Costing (Reset formulir bersih & generate nomor dokumen baru)
+  const handleStartNewCosting = () => {
+    const newNum = `CST-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`;
+    setActiveCostingId(null);
+    setCostingNumber(newNum);
+    const prod = products[0] || currentProduct;
+    if (prod) {
+      setSelectedProductId(prod.id);
+      setTitle(`Costing HPP ${prod.name} (Batch 1.000 Pcs)`);
+    } else {
+      setTitle('Analisis HPP Accessories & Jasa');
+    }
+    setOrderQuantity(1000);
+    setCompanyName(companyProfile.companyName || 'PT. GARMENT PRESISI NUSANTARA');
+    setBuyerName(companyProfile.defaultBuyerName || '-');
+    setCalculationDate(new Date().toISOString().split('T')[0]);
+    setNotes('Estimasi biaya komponen accessories dan ongkos jasa pengerjaan untuk penentuan HPP.');
+    setTargetMarkupPercent(25);
+
+    // Inisialisasi ulang items dengan rincian default produk
+    if (prod) {
+      const items: ProductCostingItem[] = (prod.accessories || []).map((rel) => {
+        const acc = accessories.find((a) => a.id === rel.accessoryId);
+        if (!acc) {
+          return {
+            accessoryId: rel.accessoryId,
+            accessoryName: 'Accessories',
+            accessoryCategory: 'raw_material_based' as const,
+            unitPrice: 0,
+            usageQtyPerProduct: rel.qtyPerProduct,
+            totalUsageQty: rel.qtyPerProduct * 1000,
+            totalCostPerProduct: 0,
+            totalCostBatch: 0,
+          };
+        }
+        const priceInfo = getAccessoryPriceInfo(acc);
+        const usageQty = rel.qtyPerProduct;
+        return {
+          accessoryId: acc.id,
+          accessoryName: acc.name,
+          accessoryCategory: acc.category,
+          rawMaterialName: priceInfo.rawMaterialName,
+          rawMaterialUnitPrice: priceInfo.rawMaterialUnitPrice,
+          yieldPerUnit: priceInfo.yieldPerUnit,
+          materialUsagePerPcs: priceInfo.yieldPerUnit ? Number((1 / priceInfo.yieldPerUnit).toFixed(6)) : acc.materialUsagePerPcs,
+          rawMaterialSize: acc.rawMaterialSize,
+          pieceCuttingSize: acc.pieceCuttingSize,
+          divisionFormula: acc.divisionFormula,
+          differentSizeNotes: acc.differentSizeNotes,
+          unitPrice: priceInfo.unitPrice,
+          usageQtyPerProduct: usageQty,
+          totalUsageQty: usageQty * 1000,
+          totalCostPerProduct: usageQty * priceInfo.unitPrice,
+          totalCostBatch: usageQty * 1000 * priceInfo.unitPrice,
+          notes: priceInfo.detailText,
+        };
+      });
+
+      // Tambahkan jasa default
+      const defaultServices = accessories.filter((a) => a.category === 'service');
+      defaultServices.forEach((srv) => {
+        const srvPrice = srv.purchasePrice || 0;
+        items.push({
+          accessoryId: srv.id,
+          accessoryName: srv.name,
+          accessoryCategory: 'service',
+          rawMaterialName: '-',
+          rawMaterialUnitPrice: 0,
+          yieldPerUnit: 1,
+          unitPrice: srvPrice,
+          usageQtyPerProduct: 1,
+          totalUsageQty: 1000,
+          totalCostPerProduct: srvPrice,
+          totalCostBatch: srvPrice * 1000,
+          notes: srv.notes || 'Tarif Jasa Pengerjaan',
+        });
+      });
+
+      setCostingItems(items);
+    }
+
+    setCostingSubTab('calculator');
+    setNotice('Perhitungan costing baru dimulai! Formulir telah direset bersih.');
+    setTimeout(() => setNotice(null), 4000);
+  };
+
   // Export to CSV
   const handleExportCsv = () => {
     let csv = 'data:text/csv;charset=utf-8,';
@@ -583,243 +679,49 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     document.body.removeChild(link);
   };
 
-  // Export to PDF (A4 format)
-  const handleExportPdf = () => {
-    setIsExportingPdf(true);
-    setIsFormatModalOpen(false);
-    setNotice('Menyiapkan berkas PDF format A4...');
-    try {
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4',
-      });
-
-      const margin = 15;
-      let y = 18;
-
-      // Header Letterhead
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(13);
-      pdf.setTextColor(20, 30, 60);
-      pdf.text(companyName || companyProfile.companyName || 'PT. GARMENT PRESISI NUSANTARA', margin, y);
-    y += 5;
-
-    pdf.setFontSize(9.5);
-    pdf.setTextColor(80, 80, 80);
-    pdf.text('PRODUCT COSTING • HPP KOMPONEN ACCESSORIES & BIAYA JASA', margin, y);
-    y += 4;
-    pdf.setDrawColor(20, 30, 60);
-    pdf.setLineWidth(0.6);
-    pdf.line(margin, y, 210 - margin, y);
-    y += 7;
-
-    // Document Meta
-    pdf.setFontSize(8.5);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(60, 60, 60);
-    pdf.text(`No Dokumen : ${costingNumber}`, margin, y);
-    pdf.text(`Tanggal : ${calculationDate}`, 130, y);
-    y += 4.5;
-    pdf.text(`Produk : ${currentProduct?.name} (${currentProduct?.code})`, margin, y);
-    pdf.text(`Jumlah Pesanan : ${orderQuantity.toLocaleString('id-ID')} Pcs`, 130, y);
-    y += 4.5;
-    pdf.text(`Buyer / Pemesan : ${buyerName}`, margin, y);
-    y += 7;
-
-    // SECTION 1: TABEL ACCESSORIES
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(9);
-    pdf.setTextColor(30, 40, 70);
-    pdf.text('1. RINCIAN KOMPONEN ACCESSORIES', margin, y);
-    y += 3.5;
-
-    pdf.setFillColor(240, 245, 250);
-    pdf.rect(margin, y, 180, 6, 'F');
-    pdf.setDrawColor(180, 190, 205);
-    pdf.rect(margin, y, 180, 6);
-
-    pdf.setFontSize(7.5);
-    pdf.text('No', margin + 2, y + 4.2);
-    pdf.text('Nama Accessories', margin + 10, y + 4.2);
-    pdf.text('Kategori', margin + 70, y + 4.2);
-    pdf.text('Harga Satuan', margin + 100, y + 4.2);
-    pdf.text('Qty/Pcs', margin + 130, y + 4.2);
-    pdf.text('Cost / Pcs', margin + 155, y + 4.2);
-    y += 6;
-
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.5);
-    pdf.setTextColor(30, 30, 30);
-
-    if (accessoryItems.length === 0) {
-      pdf.text('Tidak ada komponen accessories', margin + 10, y + 4.5);
-      y += 6;
-    } else {
-      accessoryItems.forEach((item, idx) => {
-        if (y > 265) {
-          pdf.addPage();
-          y = 18;
-        }
-        pdf.setDrawColor(230, 235, 240);
-        pdf.line(margin, y + 5, margin + 180, y + 5);
-
-        pdf.text(String(idx + 1), margin + 2, y + 3.8);
-        pdf.text(item.accessoryName.slice(0, 32), margin + 10, y + 3.8);
-        pdf.text(item.accessoryCategory === 'ready_made' ? 'Beli Jadi' : 'Olah Bahan', margin + 70, y + 3.8);
-        pdf.text(`Rp ${item.unitPrice.toLocaleString('id-ID', { maximumFractionDigits: 1 })}`, margin + 100, y + 3.8);
-        pdf.text(`${item.usageQtyPerProduct}`, margin + 130, y + 3.8);
-        pdf.setFont('helvetica', 'bold');
-        pdf.text(`Rp ${item.totalCostPerProduct.toLocaleString('id-ID', { maximumFractionDigits: 1 })}`, margin + 155, y + 3.8);
-        pdf.setFont('helvetica', 'normal');
-        y += 5.5;
-      });
-    }
-
-    // Subtotal Accessories
-    pdf.setFillColor(245, 247, 250);
-    pdf.rect(margin, y, 180, 5.5, 'F');
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Subtotal Biaya Accessories / Pcs:', margin + 80, y + 3.8);
-    pdf.text(`Rp ${totalAccessoriesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 155, y + 3.8);
-    y += 8.5;
-
-    // SECTION 2: TABEL JASA
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(9);
-    pdf.setTextColor(30, 40, 70);
-    pdf.text('2. RINCIAN BIAYA JASA & ONGKOS PENGERJAAN', margin, y);
-    y += 3.5;
-
-    pdf.setFillColor(238, 242, 255);
-    pdf.rect(margin, y, 180, 6, 'F');
-    pdf.setDrawColor(199, 210, 254);
-    pdf.rect(margin, y, 180, 6);
-
-    pdf.setFontSize(7.5);
-    pdf.text('No', margin + 2, y + 4.2);
-    pdf.text('Nama Jasa / Biaya Pengerjaan', margin + 10, y + 4.2);
-    pdf.text('Keterangan', margin + 70, y + 4.2);
-    pdf.text('Tarif / Satuan', margin + 100, y + 4.2);
-    pdf.text('Qty / Pcs', margin + 130, y + 4.2);
-    pdf.text('Biaya Jasa / Pcs', margin + 155, y + 4.2);
-    y += 6;
-
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.5);
-    pdf.setTextColor(30, 30, 30);
-
-    if (serviceItems.length === 0) {
-      pdf.text('Tidak ada biaya jasa yang ditambahkan', margin + 10, y + 4.5);
-      y += 6;
-    } else {
-      serviceItems.forEach((item, idx) => {
-        if (y > 265) {
-          pdf.addPage();
-          y = 18;
-        }
-        pdf.setDrawColor(230, 235, 240);
-        pdf.line(margin, y + 5, margin + 180, y + 5);
-
-        pdf.text(String(idx + 1), margin + 2, y + 3.8);
-        pdf.text(item.accessoryName.slice(0, 32), margin + 10, y + 3.8);
-        pdf.text((item.notes || 'Jasa Pengerjaan').slice(0, 22), margin + 70, y + 3.8);
-        pdf.text(`Rp ${item.unitPrice.toLocaleString('id-ID', { maximumFractionDigits: 1 })}`, margin + 100, y + 3.8);
-        pdf.text(`${item.usageQtyPerProduct}`, margin + 130, y + 3.8);
-        pdf.setFont('helvetica', 'bold');
-        pdf.text(`Rp ${item.totalCostPerProduct.toLocaleString('id-ID', { maximumFractionDigits: 1 })}`, margin + 155, y + 3.8);
-        pdf.setFont('helvetica', 'normal');
-        y += 5.5;
-      });
-    }
-
-    // Subtotal Jasa
-    pdf.setFillColor(238, 242, 255);
-    pdf.rect(margin, y, 180, 5.5, 'F');
-    pdf.setFont('helvetica', 'bold');
-    pdf.text('Subtotal Biaya Jasa / Pcs:', margin + 80, y + 3.8);
-    pdf.text(`Rp ${totalServicesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 155, y + 3.8);
-    y += 9;
-
-    if (y > 240) {
-      pdf.addPage();
-      y = 18;
-    }
-
-    // GRAND TOTAL SUMMARY BOX
-    pdf.setFillColor(254, 252, 232);
-    pdf.rect(margin, y, 180, 32, 'F');
-    pdf.setDrawColor(250, 204, 21);
-    pdf.rect(margin, y, 180, 32);
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(8.5);
-    pdf.setTextColor(113, 63, 18);
-    pdf.text('REKAPITULASI HPP & SIMULATOR HARGA JUAL:', margin + 4, y + 5.5);
-
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(50, 50, 50);
-    pdf.text(`Subtotal Accessories / Pcs: Rp ${totalAccessoriesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2 })}`, margin + 4, y + 11.5);
-    pdf.text(`Subtotal Jasa / Pcs: Rp ${totalServicesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2 })}`, margin + 95, y + 11.5);
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(20, 30, 70);
-    pdf.text(`GRAND TOTAL HPP / Pcs:`, margin + 4, y + 17.5);
-    pdf.text(`Rp ${totalCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, margin + 50, y + 17.5);
-
-    pdf.text(`Total Biaya Batch (${orderQuantity.toLocaleString('id-ID')} Pcs):`, margin + 95, y + 17.5);
-    pdf.text(`Rp ${totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`, margin + 148, y + 17.5);
-
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(180, 83, 9);
-    pdf.text(`Rekomendasi Harga Jual (Target Margin ${targetMarkupPercent}%):`, margin + 4, y + 24.5);
-    pdf.setFontSize(9.5);
-    pdf.text(`Rp ${recommendedSellingPricePerUnit.toLocaleString('id-ID', { maximumFractionDigits: 0 })} / Pcs`, margin + 95, y + 24.5);
-
-    y += 40;
-
-    // Signatures
-    pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7.5);
-    pdf.setTextColor(80, 80, 80);
-    pdf.text('Dibuat Oleh (Cost Estimator):', margin + 10, y);
-    pdf.text('Diperiksa (Bag. Keuangan):', margin + 70, y);
-    pdf.text('Disetujui (Pimpinan):', margin + 130, y);
-
-    y += 16;
-    pdf.setDrawColor(160, 160, 160);
-    pdf.line(margin + 5, y, margin + 50, y);
-    pdf.line(margin + 65, y, margin + 110, y);
-    pdf.line(margin + 125, y, margin + 170, y);
-
-    pdf.text('( Staff Estimasi Biaya )', margin + 12, y + 4);
-    pdf.text('( Manager Keuangan )', margin + 73, y + 4);
-    pdf.text('( Direktur Operasional )', margin + 134, y + 4);
-
-    const safeNumber = costingNumber.replace(/[^a-zA-Z0-9-_]/g, '_');
-    pdf.save(`Product_Costing_${safeNumber}.pdf`);
-    setNotice(`Berhasil mengunduh PDF: Product_Costing_${safeNumber}.pdf`);
-    setTimeout(() => setNotice(null), 3500);
-  } catch (err) {
-    console.error('Gagal generate PDF:', err);
-    setNotice('Gagal membuat berkas PDF.');
-    setTimeout(() => setNotice(null), 3500);
-  } finally {
-    setIsExportingPdf(false);
-  }
-};
-
-  // Capture canvas for JPEG and PNG downloads
+  // Capture canvas for PDF, JPEG, and PNG downloads (100% identical format & quality)
   const captureCostingCanvas = async (): Promise<HTMLCanvasElement> => {
-    const el = document.getElementById('product-costing-printable-sheet');
-    if (!el) throw new Error('Elemen lembar costing tidak ditemukan');
+    const el = document.getElementById("product-costing-printable-sheet");
+    if (!el) throw new Error("Elemen lembar costing tidak ditemukan");
     return await html2canvas(el, {
-      scale: 2,
+      scale: 2.2, // Resolusi tinggi tajam untuk cetak A4 dan ekspor gambar
       useCORS: true,
       logging: false,
-      backgroundColor: '#ffffff',
+      backgroundColor: "#ffffff",
+      windowWidth: 1200,
+      scrollX: 0,
+      scrollY: 0,
     });
+  };
+
+  // Export to PDF (A4 format 1:1 identik dengan Image)
+  const handleExportPdf = async () => {
+    setIsExportingPdf(true);
+    setIsFormatModalOpen(false);
+    setNotice("Menyiapkan berkas PDF format A4 kualitas tinggi (identik dengan gambar)...");
+    try {
+      const canvas = await captureCostingCanvas();
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
+      // Format Standar A4: 210 x 297 mm
+      const imgData = canvas.toDataURL("image/jpeg", 0.98);
+      pdf.addImage(imgData, "JPEG", 0, 0, 210, 297);
+
+      const safeNumber = costingNumber.replace(/[^a-zA-Z0-9-_]/g, "_");
+      pdf.save(`Product_Costing_${safeNumber}.pdf`);
+      setNotice(`Berhasil mengunduh PDF A4: Product_Costing_${safeNumber}.pdf`);
+      setTimeout(() => setNotice(null), 3500);
+    } catch (err) {
+      console.error("Gagal generate PDF:", err);
+      setNotice("Gagal membuat berkas PDF.");
+      setTimeout(() => setNotice(null), 3500);
+    } finally {
+      setIsExportingPdf(false);
+    }
   };
 
   // Export as high-resolution JPEG (.jpg)
@@ -906,6 +808,16 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
 
         {/* View Switcher: Calculator vs Saved Costings & Back to Consumption */}
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            id="btn-top-start-new-costing"
+            onClick={handleStartNewCosting}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition shadow-xs"
+            title="Mulai perhitungan costing baru dengan formulir bersih dan nomor dokumen baru"
+          >
+            <PlusCircle className="w-4 h-4 text-white" />
+            <span>+ Mulai Perhitungan Baru</span>
+          </button>
+
           {onNavigateToConsumption && (
             <button
               onClick={onNavigateToConsumption}
@@ -1056,8 +968,20 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                   1. Pilih Produk & Parameter Pesanan (Dari Master Produk Consumption)
                 </h3>
               </div>
-              <div className="text-xs text-slate-500">
-                Data produk otomatis terhubung dengan master bill of materials
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 hidden sm:inline">
+                  Data produk terhubung dengan BOM
+                </span>
+                <button
+                  type="button"
+                  id="btn-card-start-new-costing"
+                  onClick={handleStartNewCosting}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition shadow-xs"
+                  title="Mulai perhitungan costing baru dengan nomor dokumen dan formulir bersih"
+                >
+                  <PlusCircle className="w-3.5 h-3.5" />
+                  <span>+ Mulai Perhitungan Baru</span>
+                </button>
               </div>
             </div>
 
@@ -1263,6 +1187,30 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                           <td className="py-3 px-3">
                             <div className="font-bold text-slate-900">{item.accessoryName}</div>
                             <div className="text-[10px] text-slate-500 font-mono">{item.notes || '-'}</div>
+                            {!isReady && (
+                              <div className="mt-1 space-y-0.5 text-[10px]">
+                                {item.yieldPerUnit && (
+                                  <div className="text-purple-950 font-mono font-semibold bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200/60 inline-block">
+                                    Yield: {item.yieldPerUnit} pcs • Pemakaian: 1÷{item.yieldPerUnit} = {(1 / item.yieldPerUnit).toLocaleString('id-ID', { minimumFractionDigits: 4, maximumFractionDigits: 6 })}/pcs
+                                  </div>
+                                )}
+                                {(item.rawMaterialSize || item.pieceCuttingSize) && (
+                                  <div className="text-slate-600 bg-slate-100 rounded px-1.5 py-0.5 font-mono">
+                                    📐 {item.rawMaterialSize ? `Bahan: ${item.rawMaterialSize}` : ''} {item.pieceCuttingSize ? `| Potong: ${item.pieceCuttingSize}` : ''}
+                                  </div>
+                                )}
+                                {item.divisionFormula && (
+                                  <div className="text-purple-900 bg-purple-50 rounded px-1.5 py-0.5 font-mono border border-purple-200/50">
+                                    ➗ Rumus: {item.divisionFormula}
+                                  </div>
+                                )}
+                                {item.differentSizeNotes && (
+                                  <div className="text-amber-900 bg-amber-50 rounded px-1.5 py-0.5 border border-amber-200/50 font-medium">
+                                    💡 Acuan Berbeda: {item.differentSizeNotes}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </td>
 
                           {/* 3. Tipe Kategori */}
@@ -1653,7 +1601,18 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
 
           {/* Action Toolbar Bottom */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                id="btn-bottom-start-new-costing"
+                onClick={handleStartNewCosting}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 px-4 py-2.5 text-xs font-bold text-white transition shadow-sm"
+                title="Mulai perhitungan costing baru dengan formulir bersih"
+              >
+                <PlusCircle className="w-4 h-4 text-white" />
+                <span>+ Mulai Perhitungan Baru</span>
+              </button>
+
               <button
                 id="btn-save-product-costing"
                 onClick={handleOpenSaveCostingModal}
@@ -2214,7 +2173,29 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                     <tr key={idx}>
                       <td className="py-1.5 px-2 text-slate-500">{idx + 1}</td>
                       <td className="py-1.5 px-2 font-semibold text-slate-900">{item.accessoryName}</td>
-                      <td className="py-1.5 px-2 text-slate-500">{item.notes || '-'}</td>
+                      <td className="py-1.5 px-2 text-slate-500">
+                        <div>{item.notes || '-'}</div>
+                        {item.accessoryCategory === 'raw_material_based' && item.yieldPerUnit && (
+                          <div className="text-[9px] font-mono text-purple-900 bg-purple-50 px-1 py-0.5 rounded mt-0.5 inline-block border border-purple-200">
+                            Yield: {item.yieldPerUnit} pcs • Pemakaian: 1÷{item.yieldPerUnit} = {(1 / item.yieldPerUnit).toLocaleString('id-ID', { minimumFractionDigits: 4, maximumFractionDigits: 6 })}/pcs
+                          </div>
+                        )}
+                        {(item.rawMaterialSize || item.pieceCuttingSize) && (
+                          <div className="text-[9px] font-mono text-slate-600 bg-slate-100 px-1 py-0.5 rounded mt-0.5">
+                            📐 {item.rawMaterialSize ? `Bahan: ${item.rawMaterialSize}` : ''} {item.pieceCuttingSize ? `| Potong: ${item.pieceCuttingSize}` : ''}
+                          </div>
+                        )}
+                        {item.divisionFormula && (
+                          <div className="text-[9px] font-mono text-purple-900 bg-purple-50 px-1 py-0.5 rounded mt-0.5 inline-block border border-purple-200">
+                            ➗ {item.divisionFormula}
+                          </div>
+                        )}
+                        {item.differentSizeNotes && (
+                          <div className="text-[9px] text-amber-900 bg-amber-50 px-1 py-0.5 rounded mt-0.5 border border-amber-200">
+                            💡 {item.differentSizeNotes}
+                          </div>
+                        )}
+                      </td>
                       <td className="py-1.5 px-2 font-mono text-right text-slate-700">
                         Rp {item.unitPrice.toLocaleString('id-ID', { maximumFractionDigits: 1 })}
                       </td>

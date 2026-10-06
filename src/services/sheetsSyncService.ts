@@ -333,6 +333,15 @@ function validateAndSanitizeUrl(rawUrl: string): { valid: boolean; url: string; 
   if (cleanUrl.endsWith('/dev')) {
     cleanUrl = cleanUrl.replace(/\/dev$/, '/exec');
   }
+  if (cleanUrl.endsWith('/dev/')) {
+    cleanUrl = cleanUrl.replace(/\/dev\/$/, '/exec');
+  }
+  if (cleanUrl.endsWith('/exec/')) {
+    cleanUrl = cleanUrl.replace(/\/exec\/$/, '/exec');
+  }
+  if (cleanUrl.includes('/exec?')) {
+    cleanUrl = cleanUrl.split('?')[0];
+  }
 
   return { valid: true, url: cleanUrl };
 }
@@ -351,40 +360,43 @@ function parseAppsScriptResponse(rawText: string, targetUrl: string): any {
   if (
     trimmed.startsWith('<') ||
     trimmed.toLowerCase().includes('<!doctype') ||
-    trimmed.toLowerCase().includes('<html')
+    trimmed.toLowerCase().includes('<html') ||
+    trimmed.toLowerCase().includes('<head')
   ) {
     if (targetUrl.includes('docs.google.com/spreadsheets')) {
       throw new Error(
-        'URL yang Anda masukkan adalah Google Spreadsheet, bukan Web App URL. Silakan ikuti panduan di tab "Kode Apps Script" untuk membuat Web App dan menyalin URL berakhiran /exec.'
+        'URL yang dimasukkan adalah file Google Spreadsheet, bukan Web App URL. Silakan ikuti petunjuk di tab "Kode Apps Script" untuk membuat Web App dan menyalin URL yang berakhiran /exec.'
       );
     }
 
     if (
       trimmed.includes('ServiceLogin') ||
       trimmed.includes('accounts.google.com') ||
-      trimmed.includes('Sign in - Google Accounts')
+      trimmed.includes('Sign in - Google Accounts') ||
+      trimmed.includes('google-signin')
     ) {
       throw new Error(
-        'Google memblokir akses karena pengaturan izin Web App belum publik. Solusi: Di halaman Apps Script Anda, klik tombol "Deploy" > "Manage deployments" > klik ikon Pensil (Edit) > ubah "Who has access" (Siapa yang memiliki akses) menjadi "Anyone" (Siapa saja) > klik "Deploy".'
+        'Google memblokir akses otomatis (mengalihkan ke halaman login). Solusi: Di editor Apps Script Anda, buka menu "Deploy" > "Manage deployments" > klik ikon Pensil (Edit) > pastikan "Who has access" (Siapa yang memiliki akses) dipilih "Anyone" (Siapa saja) lalu klik "Deploy".'
       );
     }
 
-    if (trimmed.includes('Script function not found') || trimmed.includes('doGet')) {
+    if (trimmed.includes('Script function not found') || trimmed.includes('doGet') || trimmed.includes('doPost')) {
       throw new Error(
         'Fungsi doGet() atau doPost() tidak ditemukan di Apps Script. Pastikan Anda telah menempelkan seluruh kode dari tab "Kode Apps Script" ke Code.gs dan menyimpannya.'
       );
     }
 
     throw new Error(
-      'Google Apps Script mengembalikan halaman HTML. Hal ini biasanya terjadi jika: 1) Opsi "Who has access" belum diatur ke "Anyone" (Siapa saja); atau 2) Anda belum mengklik "Review Permissions" untuk memberi izin script mengakses spreadsheet.'
+      'Server Google mengembalikan halaman HTML (bukan JSON). Hal ini terjadi jika Web App belum diberi izin publik "Anyone", atau script belum di-Authorize di Google Account Anda. Ikuti langkah di tab "Kode Apps Script".'
     );
   }
 
   try {
     return JSON.parse(trimmed);
-  } catch {
+  } catch (err: unknown) {
+    const parseErr = err instanceof Error ? err.message : String(err);
     throw new Error(
-      `Format data dari Google Sheets tidak valid (bukan JSON): "${trimmed.slice(0, 100)}..."`
+      `Format data dari Google Sheets tidak valid: ${parseErr} (Cuplikan respons: "${trimmed.slice(0, 120)}...")`
     );
   }
 }

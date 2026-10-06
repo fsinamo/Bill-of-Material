@@ -39,6 +39,11 @@ export interface Accessory {
   purchasePrice?: number; // Harga beli satuan (Rp) jika accessories jadi ATAU tarif jasa (Rp) jika jasa
   defaultRawMaterialId?: string; // ID bahan baku jika membutuhkan bahan baku
   defaultYieldPerUnit?: number; // Yield / hasil per 1 unit bahan baku jika membutuhkan bahan baku
+  materialUsagePerPcs?: number; // Pemakaian bahan per pcs accessories (1 / Yield, misal 1 / 160 = 0.006250)
+  rawMaterialSize?: string; // Ukuran / dimensi bahan baku acuan (misal: "120 x 36 cm (4.320 cm²)" atau "100 cm")
+  pieceCuttingSize?: string; // Ukuran potong per pcs (misal: "3.0 x 3.0 cm (9.28 cm²)" atau "5 cm")
+  divisionFormula?: string; // Angka / rumus pembagian bahan dengan hasil (misal: "4.320 cm² ÷ 9.28 cm² = 465 pcs/lembar")
+  differentSizeNotes?: string; // Acuan jika menggunakan ukuran bahan baku yang berbeda (misal: "Acuan: Bahan baru ÷ 9.28 cm² = Yield baru")
   notes?: string;
   createdAt: string;
   updatedAt: string;
@@ -51,6 +56,11 @@ export interface ProductCostingItem {
   rawMaterialName?: string;
   rawMaterialUnitPrice?: number;
   yieldPerUnit?: number;
+  materialUsagePerPcs?: number; // Pemakaian bahan baku per pcs (1 / yield)
+  rawMaterialSize?: string;
+  pieceCuttingSize?: string;
+  divisionFormula?: string;
+  differentSizeNotes?: string;
   unitPrice: number; // Harga per satuan accessory / tarif jasa (Rp)
   usageQtyPerProduct: number; // Jumlah pemakaian / frekuensi pengerjaan per pcs produk
   totalUsageQty: number; // Total pemakaian untuk seluruh pesanan
@@ -94,9 +104,14 @@ export interface ConsumptionDetail {
   rawMaterialSpec: string;
   rawMaterialUnit: string;
   yieldPerUnit: number; // pcs produced per 1 raw material unit
-  rawMaterialCalculated: number; // totalAccessoryNeeded / yieldPerUnit
+  materialUsagePerPcs?: number; // 1 / yieldPerUnit (misal 1 / 160 = 0.006250 lembar/pcs)
+  rawMaterialCalculated: number; // totalAccessoryNeeded / yieldPerUnit (atau totalAccessoryNeeded * materialUsagePerPcs)
   allowancePercent: number; // % waste/afval/tolerance
   rawMaterialWithAllowance: number;
+  rawMaterialSize?: string; // Ukuran / dimensi bahan baku acuan
+  pieceCuttingSize?: string; // Ukuran potong per pcs
+  divisionFormula?: string; // Angka & rumus pembagian bahan dengan hasil
+  differentSizeNotes?: string; // Acuan jika menggunakan ukuran bahan berbeda
 }
 
 export interface RawMaterialSummary {
@@ -110,7 +125,10 @@ export interface RawMaterialSummary {
     accessoryName: string;
     accessoryQty: number;
     yieldPerUnit: number;
+    materialUsagePerPcs?: number;
     rawMaterialPortion: number;
+    divisionFormula?: string;
+    differentSizeNotes?: string;
   }>;
 }
 

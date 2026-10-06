@@ -944,7 +944,26 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                           <tr key={idx} className="hover:bg-slate-50/60">
                             <td className="py-2 px-2.5 text-slate-500 font-mono">{itemNumber}</td>
                             <td className="py-2 px-2.5 font-semibold text-slate-900 break-words">
-                              {d.accessoryName}
+                              <div>{d.accessoryName}</div>
+                              {(d.divisionFormula || d.differentSizeNotes || d.rawMaterialSize || d.pieceCuttingSize) && (
+                                <div className="mt-1 space-y-0.5 text-[9px] font-normal leading-tight">
+                                  {(d.rawMaterialSize || d.pieceCuttingSize) && (
+                                    <div className="text-slate-600 bg-slate-100 px-1.5 py-0.5 rounded font-mono">
+                                      📐 {d.rawMaterialSize ? `Bahan: ${d.rawMaterialSize}` : ''} {d.pieceCuttingSize ? `| Potong: ${d.pieceCuttingSize}` : ''}
+                                    </div>
+                                  )}
+                                  {d.divisionFormula && (
+                                    <div className="text-purple-900 font-mono bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200/50">
+                                      ➗ <strong>Rumus:</strong> {d.divisionFormula}
+                                    </div>
+                                  )}
+                                  {d.differentSizeNotes && (
+                                    <div className="text-amber-900 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/50">
+                                      💡 <strong>Acuan Ukuran Berbeda:</strong> {d.differentSizeNotes}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                             </td>
                             <td className="py-2 px-2.5 text-center font-mono text-slate-700">
                               {d.qtyPerProduct} buah
@@ -956,7 +975,12 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
                               {d.rawMaterialName}
                             </td>
                             <td className="py-2 px-2.5 text-right font-mono text-slate-700">
-                              {d.yieldPerUnit} buah
+                              <div>{d.yieldPerUnit} buah</div>
+                              {d.yieldPerUnit > 0 && (
+                                <div className="text-[8.5px] text-purple-900 bg-purple-50 px-1 py-0.5 rounded border border-purple-200/50 mt-0.5 inline-block font-mono">
+                                  1÷{d.yieldPerUnit} = {(1 / d.yieldPerUnit).toLocaleString('id-ID', { minimumFractionDigits: 4, maximumFractionDigits: 6 })}/pcs
+                                </div>
+                              )}
                             </td>
                             <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-900">
                               {d.rawMaterialWithAllowance.toFixed(2)} {d.rawMaterialUnit}
