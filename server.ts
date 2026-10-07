@@ -82,6 +82,167 @@ app.post('/api/sheets-config', (req, res) => {
   }
 });
 
+const COSTINGS_FILE = path.join(DATA_DIR, 'costings.json');
+const CALCULATIONS_FILE = path.join(DATA_DIR, 'calculations.json');
+const PRODUCTS_FILE = path.join(DATA_DIR, 'products.json');
+const MATERIALS_FILE = path.join(DATA_DIR, 'materials.json');
+const ACCESSORIES_FILE = path.join(DATA_DIR, 'accessories.json');
+
+// Ensure costings.json exists
+if (!fs.existsSync(COSTINGS_FILE)) {
+  fs.writeFileSync(COSTINGS_FILE, JSON.stringify([], null, 2), 'utf-8');
+}
+
+// Ensure calculations.json exists
+if (!fs.existsSync(CALCULATIONS_FILE)) {
+  fs.writeFileSync(CALCULATIONS_FILE, JSON.stringify([], null, 2), 'utf-8');
+}
+
+// Ensure products.json exists
+if (!fs.existsSync(PRODUCTS_FILE)) {
+  fs.writeFileSync(PRODUCTS_FILE, JSON.stringify([], null, 2), 'utf-8');
+}
+
+// Ensure materials.json exists
+if (!fs.existsSync(MATERIALS_FILE)) {
+  fs.writeFileSync(MATERIALS_FILE, JSON.stringify([], null, 2), 'utf-8');
+}
+
+// Ensure accessories.json exists
+if (!fs.existsSync(ACCESSORIES_FILE)) {
+  fs.writeFileSync(ACCESSORIES_FILE, JSON.stringify([], null, 2), 'utf-8');
+}
+
+// API: Get Product Costing records permanently stored on server
+app.get('/api/costings', (req, res) => {
+  try {
+    if (fs.existsSync(COSTINGS_FILE)) {
+      const data = fs.readFileSync(COSTINGS_FILE, 'utf-8');
+      return res.json(JSON.parse(data));
+    }
+    return res.json([]);
+  } catch (error) {
+    console.error('Error reading costings:', error);
+    return res.status(500).json({ error: 'Failed to read costings' });
+  }
+});
+
+// API: Save Product Costing records permanently on server
+app.post('/api/costings', (req, res) => {
+  try {
+    const costings = req.body;
+    if (!Array.isArray(costings)) {
+      return res.status(400).json({ error: 'Payload must be an array of costings' });
+    }
+    fs.writeFileSync(COSTINGS_FILE, JSON.stringify(costings, null, 2), 'utf-8');
+    return res.json({ success: true, count: costings.length });
+  } catch (error) {
+    console.error('Error saving costings:', error);
+    return res.status(500).json({ error: 'Failed to persist costings' });
+  }
+});
+
+// API: Get Calculation records permanently stored on server
+app.get('/api/calculations', (req, res) => {
+  try {
+    if (fs.existsSync(CALCULATIONS_FILE)) {
+      const data = fs.readFileSync(CALCULATIONS_FILE, 'utf-8');
+      return res.json(JSON.parse(data));
+    }
+    return res.json([]);
+  } catch (error) {
+    console.error('Error reading calculations:', error);
+    return res.status(500).json({ error: 'Failed to read calculations' });
+  }
+});
+
+// API: Save Calculation records permanently on server
+app.post('/api/calculations', (req, res) => {
+  try {
+    const calculations = req.body;
+    if (!Array.isArray(calculations)) {
+      return res.status(400).json({ error: 'Payload must be an array of calculations' });
+    }
+    fs.writeFileSync(CALCULATIONS_FILE, JSON.stringify(calculations, null, 2), 'utf-8');
+    return res.json({ success: true, count: calculations.length });
+  } catch (error) {
+    console.error('Error saving calculations:', error);
+    return res.status(500).json({ error: 'Failed to persist calculations' });
+  }
+});
+
+// API: Master Products
+app.get('/api/products', (req, res) => {
+  try {
+    if (fs.existsSync(PRODUCTS_FILE)) {
+      const data = fs.readFileSync(PRODUCTS_FILE, 'utf-8');
+      return res.json(JSON.parse(data));
+    }
+    return res.json([]);
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to read products' });
+  }
+});
+
+app.post('/api/products', (req, res) => {
+  try {
+    const products = req.body;
+    if (!Array.isArray(products)) return res.status(400).json({ error: 'Invalid payload' });
+    fs.writeFileSync(PRODUCTS_FILE, JSON.stringify(products, null, 2), 'utf-8');
+    return res.json({ success: true, count: products.length });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to save products' });
+  }
+});
+
+// API: Master Materials
+app.get('/api/raw-materials', (req, res) => {
+  try {
+    if (fs.existsSync(MATERIALS_FILE)) {
+      const data = fs.readFileSync(MATERIALS_FILE, 'utf-8');
+      return res.json(JSON.parse(data));
+    }
+    return res.json([]);
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to read materials' });
+  }
+});
+
+app.post('/api/raw-materials', (req, res) => {
+  try {
+    const materials = req.body;
+    if (!Array.isArray(materials)) return res.status(400).json({ error: 'Invalid payload' });
+    fs.writeFileSync(MATERIALS_FILE, JSON.stringify(materials, null, 2), 'utf-8');
+    return res.json({ success: true, count: materials.length });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to save materials' });
+  }
+});
+
+// API: Master Accessories
+app.get('/api/accessories', (req, res) => {
+  try {
+    if (fs.existsSync(ACCESSORIES_FILE)) {
+      const data = fs.readFileSync(ACCESSORIES_FILE, 'utf-8');
+      return res.json(JSON.parse(data));
+    }
+    return res.json([]);
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to read accessories' });
+  }
+});
+
+app.post('/api/accessories', (req, res) => {
+  try {
+    const accessories = req.body;
+    if (!Array.isArray(accessories)) return res.status(400).json({ error: 'Invalid payload' });
+    fs.writeFileSync(ACCESSORIES_FILE, JSON.stringify(accessories, null, 2), 'utf-8');
+    return res.json({ success: true, count: accessories.length });
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to save accessories' });
+  }
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Product, Accessory } from '../types';
+import { Product, Accessory, RawMaterial } from '../types';
 import { Package, Plus, Edit2, Trash2, Check, X, Calculator, Layers, Coins, CheckCircle2 } from 'lucide-react';
 
 interface MasterProductsViewProps {
   products: Product[];
   accessories: Accessory[];
+  rawMaterials?: RawMaterial[];
   onSaveProduct: (product: Product) => void;
   onDeleteProduct: (id: string) => void;
   onSelectForCalculation: (product: Product) => void;
@@ -14,6 +15,7 @@ interface MasterProductsViewProps {
 export const MasterProductsView: React.FC<MasterProductsViewProps> = ({
   products,
   accessories,
+  rawMaterials = [],
   onSaveProduct,
   onDeleteProduct,
   onSelectForCalculation,
@@ -266,6 +268,11 @@ export const MasterProductsView: React.FC<MasterProductsViewProps> = ({
                             {acc.category === 'service' && (
                               <span className="shrink-0 text-[9px] bg-indigo-100 text-indigo-800 font-bold px-1 py-0.2 rounded">Jasa</span>
                             )}
+                            {acc.category === 'raw_material_based' && (
+                              <span className="shrink-0 text-[9px] bg-purple-100 text-purple-800 font-medium px-1 py-0.2 rounded border border-purple-200 truncate">
+                                Bahan: {rawMaterials.find((m) => m.id === acc.defaultRawMaterialId)?.name || 'Olah Bahan'}
+                              </span>
+                            )}
                           </div>
                           <div className="text-[10px] text-slate-500 font-mono">{acc.code}</div>
                         </div>
@@ -374,6 +381,11 @@ export const MasterProductsView: React.FC<MasterProductsViewProps> = ({
                       className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-[11px] font-medium text-slate-700 border border-slate-200 shadow-2xs"
                     >
                       <span>{acc?.name || rel.accessoryId}</span>
+                      {acc?.category === 'raw_material_based' && (
+                        <span className="text-[9px] text-purple-700 bg-purple-50 px-1 py-0.2 rounded border border-purple-200">
+                          {rawMaterials.find((m) => m.id === acc.defaultRawMaterialId)?.name || 'Olah Bahan'}
+                        </span>
+                      )}
                       <strong className="text-blue-900 font-bold">({rel.qtyPerProduct} {acc?.unit || 'buah'})</strong>
                     </span>
                   );

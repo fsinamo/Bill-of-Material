@@ -90,6 +90,8 @@ export interface ProductCostingRecord {
   targetSellingPricePerUnit?: number; // Estimasi harga jual rekomendasi per unit
   calculationDate: string;
   notes?: string;
+  syncStatus?: 'synced' | 'pending' | 'failed' | 'local_only';
+  syncedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

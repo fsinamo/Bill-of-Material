@@ -35,6 +35,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
   // Filter tab
   const [activeFilter, setActiveFilter] = useState<'all' | 'ready_made' | 'raw_material_based' | 'service'>('all');
   const [formSuccessMessage, setFormSuccessMessage] = useState<string | null>(null);
+  const [formErrorMessage, setFormErrorMessage] = useState<string | null>(null);
 
   // Form states
   const [code, setCode] = useState('');
@@ -94,6 +95,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
     setNotes('');
     setEditingItem(null);
     setFormSuccessMessage(null);
+    setFormErrorMessage(null);
     setIsEditing(true);
   };
 
@@ -113,6 +115,7 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
     setDifferentSizeNotes(a.differentSizeNotes || '');
     setNotes(a.notes || '');
     setFormSuccessMessage(null);
+    setFormErrorMessage(null);
     setIsEditing(true);
   };
 
@@ -136,15 +139,76 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
     const savedName = name.trim();
     const isNew = !editingItem;
     const isDirectPrice = category === 'ready_made' || category === 'service';
+    const targetRawMatId = category === 'raw_material_based' ? (defaultRawMaterialId || (rawMaterials[0]?.id || '')) : undefined;
+
+    // VALIDASI KUNCI KOMPOSIT:
+    // Untuk aksesoris olahan bahan baku (raw_material_based):
+    // BOLEH menyimpan nama yang sama, asalkan BAHAN BAKUNYA BERBEDA!
+    // Kunci penyimpanan komposit: (Nama Aksesoris + ID Bahan Baku).
+    // Hanya tolak jika NAMA SAMA dan BAHAN BAKU SAMA.
+    if (category === 'raw_material_based') {
+      const duplicateSameMat = accessories.find(
+        (a) =>
+          a.id !== editingItem?.id &&
+          a.category === 'raw_material_based' &&
+          a.name.trim().toLowerCase() === savedName.toLowerCase() &&
+          a.defaultRawMaterialId === targetRawMatId
+      );
+      if (duplicateSameMat) {
+        const mat = getMaterial(targetRawMatId);
+        setFormErrorMessage(
+          `Aksesoris "${savedName}" dengan bahan baku "${mat?.name || 'ini'}" sudah terdaftar (Kode: ${duplicateSameMat.code}). Kunci unik adalah [Nama + Bahan Baku]. Silakan pilih bahan baku yang berbeda jika ingin menambah varian bahan baru untuk aksesoris ini.`
+        );
+        return;
+      }
+    } else {
+      const duplicateDirect = accessories.find(
+        (a) =>
+          a.id !== editingItem?.id &&
+          a.category === category &&
+          a.name.trim().toLowerCase() === savedName.toLowerCase()
+      );
+      if (duplicateDirect) {
+        setFormErrorMessage(
+          `${category === 'service' ? 'Jasa' : 'Aksesoris jadi'} "${savedName}" sudah terdaftar (Kode: ${duplicateDirect.code}).`
+        );
+        return;
+      }
+    }
+
+    setFormErrorMessage(null);
+
+    let finalCode = code.trim();
+    if (!finalCode) {
+      finalCode = category === 'service' ? `JSA-${Date.now().toString().slice(-4)}` : `ACC-${Date.now().toString().slice(-4)}`;
+    }
+    // Jika kode bertabrakan dengan item lain, auto-generate suffix varian agar kode tetap unik
+    const codeCollision = accessories.find(
+      (a) => a.id !== editingItem?.id && a.code.toLowerCase() === finalCode.toLowerCase()
+    );
+    if (codeCollision) {
+      if (category === 'raw_material_based') {
+        const mat = getMaterial(targetRawMatId);
+        const matSuffix = (mat?.name || 'V').replace(/[^a-zA-Z0-9]/g, '').slice(0, 4).toUpperCase();
+        finalCode = `${finalCode}-${matSuffix}`;
+      } else {
+        const nextNum = accessories.length + 1;
+        finalCode = `${category === 'service' ? 'JSA' : 'ACC'}-00${nextNum}`;
+      }
+    }
 
     const item: Accessory = {
-      id: editingItem ? editingItem.id : (category === 'service' ? `jasa-${Date.now()}` : `acc-${Date.now()}`),
-      code: code.trim() || (category === 'service' ? `JSA-${Date.now().toString().slice(-4)}` : `ACC-${Date.now().toString().slice(-4)}`),
+      id: editingItem
+        ? editingItem.id
+        : (category === 'service'
+            ? `jasa-${Date.now()}`
+            : `acc-${Date.now()}-${targetRawMatId ? targetRawMatId.replace(/[^a-zA-Z0-9]/g, '') : 'mat'}-${Math.random().toString(36).slice(2, 6)}`),
+      code: finalCode,
       name: savedName,
       unit: unit.trim() || (category === 'service' ? 'pcs' : 'buah'),
       category: category,
       purchasePrice: isDirectPrice ? Number(purchasePrice) || 0 : undefined,
-      defaultRawMaterialId: category === 'raw_material_based' ? (defaultRawMaterialId || (rawMaterials[0]?.id || '')) : undefined,
+      defaultRawMaterialId: targetRawMatId,
       defaultYieldPerUnit: category === 'raw_material_based' ? (Number(defaultYieldPerUnit) || 1) : undefined,
       materialUsagePerPcs: category === 'raw_material_based' && defaultYieldPerUnit > 0 ? Number((1 / defaultYieldPerUnit).toFixed(6)) : undefined,
       rawMaterialSize: category === 'raw_material_based' ? rawMaterialSize.trim() : undefined,
@@ -160,8 +224,19 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
 
     // Jangan kembali ke halaman asal agar tidak perlu bolak-balik jika menginput beberapa data
     if (isNew) {
-      const typeLabel = category === 'service' ? 'Jasa' : 'Aksesoris';
-      setFormSuccessMessage(`${typeLabel} "${savedName}" berhasil disimpan! Formulir siap untuk input data berikutnya.`);
+      const sameNameVariants = accessories.filter(
+        (a) => a.id !== item.id && a.name.trim().toLowerCase() === savedName.toLowerCase()
+      );
+      if (category === 'raw_material_based' && sameNameVariants.length > 0) {
+        const mat = getMaterial(targetRawMatId);
+        setFormSuccessMessage(
+          `Aksesoris "${savedName}" varian bahan "${mat?.name || 'baru'}" berhasil disimpan! (Total ${sameNameVariants.length + 1} varian bahan tersimpan untuk nama ini). Formulir siap untuk input berikutnya.`
+        );
+      } else {
+        const typeLabel = category === 'service' ? 'Jasa' : 'Aksesoris';
+        setFormSuccessMessage(`${typeLabel} "${savedName}" berhasil disimpan! Formulir siap untuk input data berikutnya.`);
+      }
+
       const nextNum = accessories.length + 2;
       const prefix = category === 'service' ? 'JSA' : 'ACC';
       setCode(`${prefix}-00${nextNum}`);
@@ -248,6 +323,21 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
             <Plus className="w-4 h-4" />
             <span>Tambah Accessories</span>
           </button>
+        </div>
+      </div>
+
+      {/* Info Callout: Kunci Unik Nama + Bahan Baku */}
+      <div className="rounded-2xl bg-purple-50/70 border border-purple-200 p-4 text-xs text-purple-900 flex items-start gap-3 shadow-2xs">
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-600 text-white shrink-0 mt-0.5">
+          <Layers className="w-4 h-4" />
+        </div>
+        <div className="space-y-1">
+          <div className="font-bold text-purple-950 text-xs">
+            Aturan Kunci Penyimpanan: Nama Aksesoris + Bahan Baku
+          </div>
+          <p className="text-[11px] text-purple-800 leading-relaxed">
+            Untuk aksesoris <strong>Olah Bahan Baku</strong>, Anda diperbolehkan menyimpan nama aksesoris yang sama dengan bahan baku yang berbeda (misalnya <em>'Kotak'</em> dari <em>Plat Seng 0.5mm</em> dan <em>'Kotak'</em> dari <em>Plat Kuningan 0.8mm</em>). Kunci penyimpanan komposit adalah <strong>Nama + Bahan</strong>, sehingga setiap varian memiliki hasil yield dan harga pokok masing-masing.
+          </p>
         </div>
       </div>
 
@@ -402,7 +492,10 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
                 <input
                   type="text"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    if (formErrorMessage) setFormErrorMessage(null);
+                  }}
                   placeholder={
                     category === 'service'
                       ? "Contoh: Jasa Jahit Rompi, Jasa Bordir Logo / Emblem, Jasa Cutting Plong, Jasa Finishing & QC"
@@ -413,6 +506,11 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
                   className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-800 outline-hidden focus:border-purple-600"
                   required
                 />
+                {category === 'raw_material_based' && (
+                  <p className="text-[10px] text-purple-700 mt-1 leading-relaxed">
+                    💡 <strong>Aturan Kunci:</strong> Aksesoris olahan bahan boleh memiliki nama yang sama dengan bahan baku berbeda (misal: 'Keling Plat' dari Plat Seng vs 'Keling Plat' dari Plat Kuningan). Kunci unik: <strong>Nama + Bahan Baku</strong>.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -712,6 +810,13 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
               </div>
             </div>
 
+            {formErrorMessage && (
+              <div className="mt-3 rounded-xl bg-rose-50 border border-rose-200 p-3 text-xs text-rose-800 flex items-center gap-2 animate-in fade-in">
+                <X className="w-4 h-4 text-rose-600 shrink-0" />
+                <span className="font-semibold">{formErrorMessage}</span>
+              </div>
+            )}
+
             <div className="flex items-center justify-between gap-3 pt-3 border-t border-slate-100 flex-wrap">
               <div className="text-[11px] text-slate-500 font-medium">
                 {!editingItem && '💡 Setelah simpan, formulir akan tetap terbuka agar Anda dapat langsung menginput data berikutnya tanpa keluar menu.'}
@@ -827,7 +932,19 @@ export const MasterAccessoriesView: React.FC<MasterAccessoriesViewProps> = ({
                     <tr key={a.id} className="hover:bg-slate-50/60">
                       <td className="py-3 px-4 font-mono font-bold text-slate-600">{a.code}</td>
                       <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900">{a.name}</div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-slate-900">{a.name}</span>
+                          {!isReady && !isService && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-100 text-purple-900 border border-purple-200">
+                              Bahan: {mat?.name || 'Olah Bahan Baku'}
+                            </span>
+                          )}
+                          {!isReady && !isService && accessories.filter((other) => other.name.trim().toLowerCase() === a.name.trim().toLowerCase()).length > 1 && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                              ⚡ Varian Bahan Berbeda
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] text-slate-500">Satuan: {a.unit}</div>
                       </td>
                       <td className="py-3 px-4">

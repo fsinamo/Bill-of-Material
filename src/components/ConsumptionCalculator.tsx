@@ -330,14 +330,21 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
     setActiveCalculationId(record.id);
     onSaveCalculation(record);
 
-    let message = `Perhitungan ${record.calculationNumber} berhasil diperbarui (menimpa data yang ada)!`;
+    const targetUrl = (sheetsConfig?.webAppUrl || storageService.getSheetsConfig()?.webAppUrl || '').trim();
+    let message = `Perhitungan ${record.calculationNumber} berhasil diperbarui!`;
 
-    if (sheetsConfig.webAppUrl && sheetsConfig.autoSyncOnSave) {
+    if (targetUrl) {
       setIsSyncing(true);
-      const syncRes = await sheetsSyncService.pushSingleCalculation(sheetsConfig.webAppUrl, record);
+      const syncRes = await sheetsSyncService.pushSingleCalculation(targetUrl, record);
       setIsSyncing(false);
       if (syncRes.success) {
-        message = `Perhitungan ${record.calculationNumber} berhasil diperbarui & disinkronkan ke Google Sheets!`;
+        const syncedRec: CalculationRecord = {
+          ...record,
+          syncStatus: 'synced',
+          syncedAt: new Date().toISOString(),
+        };
+        onSaveCalculation(syncedRec);
+        message = `✓ Perhitungan ${record.calculationNumber} berhasil diperbarui & otomatis tersimpan ke Google Sheets (Tab Konsumsi_Bahan)!`;
       } else {
         message += ` (Gagal sinkron Sheets: ${syncRes.message})`;
       }
@@ -362,14 +369,21 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
     record.title = finalTitle;
     onSaveCalculation(record);
 
+    const targetUrl = (sheetsConfig?.webAppUrl || storageService.getSheetsConfig()?.webAppUrl || '').trim();
     let message = `Dokumen baru "${finalNumber}" berhasil dibuat & disimpan!`;
 
-    if (sheetsConfig.webAppUrl && sheetsConfig.autoSyncOnSave) {
+    if (targetUrl) {
       setIsSyncing(true);
-      const syncRes = await sheetsSyncService.pushSingleCalculation(sheetsConfig.webAppUrl, record);
+      const syncRes = await sheetsSyncService.pushSingleCalculation(targetUrl, record);
       setIsSyncing(false);
       if (syncRes.success) {
-        message = `Dokumen baru "${finalNumber}" berhasil disimpan & disinkronkan ke Google Sheets!`;
+        const syncedRec: CalculationRecord = {
+          ...record,
+          syncStatus: 'synced',
+          syncedAt: new Date().toISOString(),
+        };
+        onSaveCalculation(syncedRec);
+        message = `✓ Dokumen baru "${finalNumber}" berhasil disimpan & otomatis tersimpan ke Google Sheets (Tab Konsumsi_Bahan)!`;
       } else {
         message += ` (Gagal sinkron Sheets: ${syncRes.message})`;
       }
@@ -755,7 +769,14 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
               {details.map((row) => (
                 <tr key={row.accessoryId} className="hover:bg-slate-50/60">
                   <td className="py-3 px-3.5 font-bold text-slate-900">
-                    <div>{row.accessoryName}</div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span>{row.accessoryName}</span>
+                      {row.rawMaterialName && !row.rawMaterialName.includes('Beli Jadi') && !row.rawMaterialName.includes('Jasa') && (
+                        <span className="text-[10px] font-semibold text-purple-800 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
+                          Bahan: {row.rawMaterialName}
+                        </span>
+                      )}
+                    </div>
                     {(row.divisionFormula || row.differentSizeNotes || row.rawMaterialSize) && (
                       <div className="mt-1 space-y-0.5 text-[10px] font-normal">
                         {row.divisionFormula && (

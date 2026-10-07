@@ -6,8 +6,10 @@ import {
   ProductCostingItem,
   ProductCostingRecord,
   AccessoryCategory,
+  GoogleSheetsConfig,
 } from '../types';
 import { storageService } from '../services/storageService';
+import { sheetsSyncService } from '../services/sheetsSyncService';
 import { companyProfile } from '../data/defaultData';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -47,6 +49,8 @@ interface ProductCostingViewProps {
   rawMaterials: RawMaterial[];
   initialProductId?: string;
   onNavigateToConsumption?: () => void;
+  sheetsConfig?: GoogleSheetsConfig;
+  onCostingsUpdated?: () => void;
 }
 
 export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
@@ -55,12 +59,45 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   rawMaterials,
   initialProductId,
   onNavigateToConsumption,
+  sheetsConfig: propSheetsConfig,
+  onCostingsUpdated,
 }) => {
   // Navigation sub-tab inside Product Costing: 'calculator' | 'saved'
   const [costingSubTab, setCostingSubTab] = useState<'calculator' | 'saved'>('calculator');
   const [savedCostings, setSavedCostings] = useState<ProductCostingRecord[]>(() =>
     storageService.getProductCostings()
   );
+  const [isSyncingSheets, setIsSyncingSheets] = useState<boolean>(false);
+
+  // Effective Google Sheets Configuration (with fallback to storageService)
+  const effectiveSheetsConfig = propSheetsConfig?.webAppUrl ? propSheetsConfig : storageService.getSheetsConfig();
+
+  // Sync permanent costings from server, IndexedDB, and Google Sheets on load
+  useEffect(() => {
+    storageService.syncPermanentCostings().then(async (costings) => {
+      if (costings && costings.length > 0) {
+        setSavedCostings(costings);
+      } else {
+        const targetUrl = (effectiveSheetsConfig?.webAppUrl || '').trim();
+        if (targetUrl) {
+          setIsSyncingSheets(true);
+          try {
+            const pullRes = await sheetsSyncService.pullAllFromSheets(targetUrl);
+            if (pullRes.success && pullRes.data?.costings && pullRes.data.costings.length > 0) {
+              storageService.saveProductCostings(pullRes.data.costings);
+              setSavedCostings(pullRes.data.costings);
+              setNotice(`✓ Berhasil memulihkan ${pullRes.data.costings.length} arsip costing dari Google Sheets.`);
+              setTimeout(() => setNotice(null), 4000);
+            }
+          } catch {
+            // ignore
+          } finally {
+            setIsSyncingSheets(false);
+          }
+        }
+      }
+    });
+  }, [propSheetsConfig]);
 
   // Form states
   const [selectedProductId, setSelectedProductId] = useState<string>(
@@ -473,8 +510,31 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     setActiveCostingId(targetId);
     const updated = storageService.saveSingleProductCosting(record);
     setSavedCostings(updated);
-    setNotice(`Kalkulasi Costing "${record.costingNumber}" berhasil diperbarui (menimpa data yang ada)!`);
-    setTimeout(() => setNotice(null), 4000);
+    if (onCostingsUpdated) onCostingsUpdated();
+
+    const targetUrl = (effectiveSheetsConfig?.webAppUrl || storageService.getSheetsConfig()?.webAppUrl || '').trim();
+    if (targetUrl) {
+      setIsSyncingSheets(true);
+      sheetsSyncService.pushSingleCosting(targetUrl, record).then((res) => {
+        setIsSyncingSheets(false);
+        if (res.success) {
+          const syncedRecord: ProductCostingRecord = {
+            ...record,
+            syncStatus: 'synced',
+            syncedAt: new Date().toISOString(),
+          };
+          storageService.saveSingleProductCosting(syncedRecord);
+          setSavedCostings(storageService.getProductCostings());
+          setNotice(`✓ Kalkulasi Costing "${record.costingNumber}" berhasil diperbarui & otomatis tersimpan ke Google Sheets (Tab Product_Costing)!`);
+        } else {
+          setNotice(`Kalkulasi Costing diperbarui di penyimpanan lokal (Sheets: ${res.message})`);
+        }
+        setTimeout(() => setNotice(null), 5000);
+      });
+    } else {
+      setNotice(`Kalkulasi Costing "${record.costingNumber}" berhasil diperbarui di penyimpanan lokal!`);
+      setTimeout(() => setNotice(null), 4000);
+    }
   };
 
   // 2. Pilihan Membuat Dokumen / Nama Baru
@@ -517,8 +577,109 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
 
     const updated = storageService.saveSingleProductCosting(record);
     setSavedCostings(updated);
-    setNotice(`Dokumen baru Costing "${finalNum}" berhasil dibuat & disimpan!`);
+    if (onCostingsUpdated) onCostingsUpdated();
+
+    const targetUrl = (effectiveSheetsConfig?.webAppUrl || storageService.getSheetsConfig()?.webAppUrl || '').trim();
+    if (targetUrl) {
+      setIsSyncingSheets(true);
+      sheetsSyncService.pushSingleCosting(targetUrl, record).then((res) => {
+        setIsSyncingSheets(false);
+        if (res.success) {
+          const syncedRecord: ProductCostingRecord = {
+            ...record,
+            syncStatus: 'synced',
+            syncedAt: new Date().toISOString(),
+          };
+          storageService.saveSingleProductCosting(syncedRecord);
+          setSavedCostings(storageService.getProductCostings());
+          setNotice(`✓ Dokumen baru Costing "${finalNum}" berhasil disimpan & otomatis tersimpan ke Google Sheets (Tab Product_Costing)!`);
+        } else {
+          setNotice(`Dokumen baru Costing disimpan di penyimpanan lokal (Sheets: ${res.message})`);
+        }
+        setTimeout(() => setNotice(null), 5000);
+      });
+    } else {
+      setNotice(`Dokumen baru Costing "${finalNum}" berhasil dibuat & disimpan di penyimpanan lokal!`);
+      setTimeout(() => setNotice(null), 4000);
+    }
+  };
+
+  const handleSyncSingleCostingToSheets = async (rec: ProductCostingRecord) => {
+    const targetUrl = (effectiveSheetsConfig?.webAppUrl || storageService.getSheetsConfig()?.webAppUrl || '').trim();
+    if (!targetUrl) {
+      setNotice('Web App URL Google Sheets belum diatur. Silakan atur URL di menu Sinkronisasi Sheets.');
+      setTimeout(() => setNotice(null), 4000);
+      return;
+    }
+    setIsSyncingSheets(true);
+    const res = await sheetsSyncService.pushSingleCosting(targetUrl, rec);
+    setIsSyncingSheets(false);
+    if (res.success) {
+      const syncedRecord: ProductCostingRecord = {
+        ...rec,
+        syncStatus: 'synced',
+        syncedAt: new Date().toISOString(),
+      };
+      storageService.saveSingleProductCosting(syncedRecord);
+      setSavedCostings(storageService.getProductCostings());
+    }
+    setNotice(res.message);
     setTimeout(() => setNotice(null), 4000);
+  };
+
+  const handleSyncAllCostingsToSheets = async () => {
+    const targetUrl = (effectiveSheetsConfig?.webAppUrl || storageService.getSheetsConfig()?.webAppUrl || '').trim();
+    if (!targetUrl) {
+      setNotice('Web App URL Google Sheets belum diatur. Silakan atur URL di menu Sinkronisasi Sheets.');
+      setTimeout(() => setNotice(null), 4000);
+      return;
+    }
+    setIsSyncingSheets(true);
+    const res = await sheetsSyncService.pushAllToSheets(targetUrl, {
+      calculations: storageService.getCalculations(),
+      products,
+      rawMaterials,
+      accessories,
+      costings: savedCostings,
+    });
+    setIsSyncingSheets(false);
+    setNotice(res.message);
+    setTimeout(() => setNotice(null), 4000);
+  };
+
+  const handlePullCostingsFromSheets = async () => {
+    const targetUrl = (effectiveSheetsConfig?.webAppUrl || storageService.getSheetsConfig()?.webAppUrl || '').trim();
+    if (!targetUrl) {
+      setNotice('Web App URL Google Sheets belum diatur. Silakan atur URL di menu Sinkronisasi Sheets.');
+      setTimeout(() => setNotice(null), 4000);
+      return;
+    }
+    setIsSyncingSheets(true);
+    try {
+      const res = await sheetsSyncService.pullAllFromSheets(targetUrl);
+      if (res.success && res.data) {
+        if (res.data.costings && res.data.costings.length > 0) {
+          storageService.saveProductCostings(res.data.costings);
+          setSavedCostings(res.data.costings);
+          setNotice(`✓ Berhasil menarik & memulihkan ${res.data.costings.length} arsip perhitungan costing dari Google Sheets!`);
+        } else {
+          setNotice('Koneksi berhasil, namun belum ada baris data costing di tab Product_Costing Google Sheets.');
+        }
+        if (res.data.calculations) storageService.saveCalculations(res.data.calculations);
+        if (res.data.products) storageService.saveProducts(res.data.products);
+        if (res.data.rawMaterials) storageService.saveRawMaterials(res.data.rawMaterials);
+        if (res.data.accessories) storageService.saveAccessories(res.data.accessories);
+        if (onCostingsUpdated) onCostingsUpdated();
+      } else {
+        setNotice(`Gagal menarik data dari Google Sheets: ${res.message}`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setNotice(`Gagal menarik data: ${msg}`);
+    } finally {
+      setIsSyncingSheets(false);
+      setTimeout(() => setNotice(null), 5000);
+    }
   };
 
   const handleDeleteSavedCosting = (id: string) => {
@@ -872,19 +1033,64 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
       {costingSubTab === 'saved' ? (
         /* Saved Costings History View */
         <div className="rounded-2xl border border-slate-200 bg-white shadow-xs overflow-hidden">
-          <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+          <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
               <FolderOpen className="w-4 h-4 text-slate-700" />
               <h3 className="text-xs font-bold text-slate-900 uppercase">Daftar Arsip Perhitungan Costing Produk</h3>
             </div>
-            <span className="text-xs text-slate-500">Total: {savedCostings.length} Dokumen</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-slate-500">Total: {savedCostings.length} Dokumen</span>
+              {effectiveSheetsConfig?.webAppUrl && (
+                <button
+                  type="button"
+                  onClick={handlePullCostingsFromSheets}
+                  disabled={isSyncingSheets}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 hover:bg-blue-800 disabled:opacity-50 text-white px-2.5 py-1 text-xs font-semibold transition shadow-xs"
+                  title="Tarik atau pulihkan arsip costing dari Google Sheets"
+                >
+                  <RotateCw className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-spin' : ''}`} />
+                  <span>{isSyncingSheets ? 'Menarik...' : 'Tarik dari Google Sheets'}</span>
+                </button>
+              )}
+              {effectiveSheetsConfig?.webAppUrl && savedCostings.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleSyncAllCostingsToSheets}
+                  disabled={isSyncingSheets}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white px-2.5 py-1 text-xs font-semibold transition shadow-xs"
+                  title="Kirim semua data costing ke Google Sheets"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>{isSyncingSheets ? 'Menyinkronkan...' : 'Sinkronkan Semua ke Sheets'}</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {savedCostings.length === 0 ? (
-            <div className="p-12 text-center text-slate-400 text-xs">
+            <div className="p-12 text-center text-slate-400 text-xs space-y-3">
               <Coins className="w-10 h-10 mx-auto text-slate-300 mb-2" />
-              <p className="font-semibold text-slate-600">Belum ada arsip costing tersimpan</p>
-              <p className="mt-1">Lakukan kalkulasi di tab Kalkulator Costing dan klik tombol "Simpan Kalkulasi Costing"</p>
+              <p className="font-semibold text-slate-700 text-sm">Belum ada arsip costing di penyimpanan lokal</p>
+              <p className="max-w-md mx-auto text-slate-500">
+                Jika Anda telah membuat kalkulasi sebelumnya dan menyimpannya ke Google Sheets, klik tombol di bawah untuk menarik dan memulihkan seluruh arsip costing Anda.
+              </p>
+              {effectiveSheetsConfig?.webAppUrl ? (
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={handlePullCostingsFromSheets}
+                    disabled={isSyncingSheets}
+                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white px-4 py-2 font-bold text-xs shadow-md transition"
+                  >
+                    <RotateCw className={`w-4 h-4 ${isSyncingSheets ? 'animate-spin' : ''}`} />
+                    <span>{isSyncingSheets ? 'Sedang Memulihkan Data...' : '⚡ Tarik & Pulihkan Data dari Google Sheets'}</span>
+                  </button>
+                </div>
+              ) : (
+                <p className="text-[11px] text-amber-700 font-medium">
+                  Lakukan kalkulasi di tab Kalkulator Costing dan klik tombol "Simpan Kalkulasi Costing"
+                </p>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -931,7 +1137,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                         </td>
                         <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">{rec.calculationDate}</td>
                         <td className="py-3 px-4 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
                             <button
                               onClick={() => handleLoadSavedCosting(rec)}
                               className="inline-flex items-center gap-1 rounded-lg bg-blue-50 text-blue-800 hover:bg-blue-100 px-2 py-1 text-[11px] font-semibold transition"
@@ -939,6 +1145,17 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                             >
                               <span>Buka</span>
                             </button>
+                            {effectiveSheetsConfig?.webAppUrl && (
+                              <button
+                                onClick={() => handleSyncSingleCostingToSheets(rec)}
+                                disabled={isSyncingSheets}
+                                className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 text-emerald-800 hover:bg-emerald-100 px-2 py-1 text-[11px] font-semibold transition"
+                                title="Sinkronkan costing ini ke Google Sheets"
+                              >
+                                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>Sync Sheets</span>
+                              </button>
+                            )}
                             <button
                               onClick={() => handleDeleteSavedCosting(rec.id)}
                               className="rounded-lg p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-600 transition"
@@ -1127,11 +1344,14 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                   className="rounded-xl border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-hidden focus:border-amber-600 max-w-[220px]"
                 >
                   <option value="">+ Pilih Aksesoris Tambahan...</option>
-                  {masterAccessoriesList.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name} ({a.category === 'ready_made' ? 'Beli Jadi' : 'Olah Bahan'})
-                    </option>
-                  ))}
+                  {masterAccessoriesList.map((a) => {
+                    const mat = rawMaterials.find((m) => m.id === a.defaultRawMaterialId);
+                    return (
+                      <option key={a.id} value={a.id}>
+                        {a.name} {a.category === 'raw_material_based' && mat ? `[Bahan: ${mat.name}]` : `(${a.category === 'ready_made' ? 'Beli Jadi' : 'Jasa'})`}
+                      </option>
+                    );
+                  })}
                 </select>
                 <button
                   type="button"
@@ -1185,7 +1405,14 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
 
                           {/* 2. Nama Accessories */}
                           <td className="py-3 px-3">
-                            <div className="font-bold text-slate-900">{item.accessoryName}</div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-slate-900">{item.accessoryName}</span>
+                              {!isReady && item.rawMaterialName && (
+                                <span className="text-[10px] font-semibold text-purple-800 bg-purple-50 px-1.5 py-0.2 rounded border border-purple-200">
+                                  Bahan: {item.rawMaterialName}
+                                </span>
+                              )}
+                            </div>
                             <div className="text-[10px] text-slate-500 font-mono">{item.notes || '-'}</div>
                             {!isReady && (
                               <div className="mt-1 space-y-0.5 text-[10px]">
@@ -2172,7 +2399,12 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                   accessoryItems.map((item, idx) => (
                     <tr key={idx}>
                       <td className="py-1.5 px-2 text-slate-500">{idx + 1}</td>
-                      <td className="py-1.5 px-2 font-semibold text-slate-900">{item.accessoryName}</td>
+                      <td className="py-1.5 px-2 font-semibold text-slate-900">
+                        {item.accessoryName}
+                        {item.accessoryCategory === 'raw_material_based' && item.rawMaterialName && (
+                          <span className="text-[9px] text-purple-800 font-normal ml-1">[{item.rawMaterialName}]</span>
+                        )}
+                      </td>
                       <td className="py-1.5 px-2 text-slate-500">
                         <div>{item.notes || '-'}</div>
                         {item.accessoryCategory === 'raw_material_based' && item.yieldPerUnit && (

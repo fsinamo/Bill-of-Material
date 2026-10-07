@@ -13,6 +13,7 @@ import {
   AppThemeId
 } from './types';
 import { storageService } from './services/storageService';
+import { sheetsSyncService } from './services/sheetsSyncService';
 import { THEME_OPTIONS, applyThemeToDocument, DEFAULT_THEME_ID } from './data/themes';
 import { ThemeSelectorModal } from './components/ThemeSelectorModal';
 import { ConsumptionCalculator } from './components/ConsumptionCalculator';
@@ -115,6 +116,10 @@ export default function App() {
         setSheetsConfig(synced);
       }
     });
+    storageService.syncPermanentCalculations().then((calcs) => {
+      if (calcs && calcs.length > 0) setCalculations(calcs);
+    });
+    storageService.syncPermanentCostings();
   }, []);
 
   // Handlers for calculations
@@ -122,6 +127,21 @@ export default function App() {
     const updated = storageService.saveSingleCalculation(calc);
     setCalculations(updated);
     setActiveCalculation(calc);
+
+    const cfg = storageService.getSheetsConfig();
+    if (cfg.webAppUrl) {
+      sheetsSyncService.pushSingleCalculation(cfg.webAppUrl, calc).then((res) => {
+        if (res.success) {
+          const synced: CalculationRecord = {
+            ...calc,
+            syncStatus: 'synced',
+            syncedAt: new Date().toISOString(),
+          };
+          const listWithSynced = storageService.saveSingleCalculation(synced);
+          setCalculations(listWithSynced);
+        }
+      }).catch(() => {});
+    }
   };
 
   const handleDeleteCalculation = (id: string) => {
@@ -168,6 +188,17 @@ export default function App() {
     }
     storageService.saveProducts(updated);
     setProducts(updated);
+
+    const cfg = storageService.getSheetsConfig();
+    if (cfg.webAppUrl) {
+      sheetsSyncService.pushAllToSheets(cfg.webAppUrl, {
+        calculations: storageService.getCalculations(),
+        products: updated,
+        rawMaterials: storageService.getRawMaterials(),
+        accessories: storageService.getAccessories(),
+        costings: storageService.getProductCostings(),
+      }).catch(() => {});
+    }
   };
 
   const handleDeleteProduct = (id: string) => {
@@ -189,6 +220,17 @@ export default function App() {
     }
     storageService.saveRawMaterials(updated);
     setRawMaterials(updated);
+
+    const cfg = storageService.getSheetsConfig();
+    if (cfg.webAppUrl) {
+      sheetsSyncService.pushAllToSheets(cfg.webAppUrl, {
+        calculations: storageService.getCalculations(),
+        products: storageService.getProducts(),
+        rawMaterials: updated,
+        accessories: storageService.getAccessories(),
+        costings: storageService.getProductCostings(),
+      }).catch(() => {});
+    }
   };
 
   const handleDeleteRawMaterial = (id: string) => {
@@ -210,6 +252,17 @@ export default function App() {
     }
     storageService.saveAccessories(updated);
     setAccessories(updated);
+
+    const cfg = storageService.getSheetsConfig();
+    if (cfg.webAppUrl) {
+      sheetsSyncService.pushAllToSheets(cfg.webAppUrl, {
+        calculations: storageService.getCalculations(),
+        products: storageService.getProducts(),
+        rawMaterials: storageService.getRawMaterials(),
+        accessories: updated,
+        costings: storageService.getProductCostings(),
+      }).catch(() => {});
+    }
   };
 
   const handleDeleteAccessory = (id: string) => {
@@ -483,6 +536,8 @@ export default function App() {
             rawMaterials={rawMaterials}
             initialProductId={selectedCostingProductId}
             onNavigateToConsumption={() => setActiveModule('consumption')}
+            sheetsConfig={sheetsConfig}
+            onCostingsUpdated={loadAllData}
           />
         )}
 
@@ -518,6 +573,7 @@ export default function App() {
               <MasterProductsView
                 products={products}
                 accessories={accessories}
+                rawMaterials={rawMaterials}
                 onSaveProduct={handleSaveProduct}
                 onDeleteProduct={handleDeleteProduct}
                 onSelectForCalculation={handleSelectProductForCalc}

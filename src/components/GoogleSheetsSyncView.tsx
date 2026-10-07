@@ -136,6 +136,7 @@ export const GoogleSheetsSyncView: React.FC<GoogleSheetsSyncViewProps> = ({
       products,
       rawMaterials,
       accessories,
+      costings: storageService.getProductCostings(),
     });
     setIsPushing(false);
     setTestResult(result);
@@ -163,6 +164,9 @@ export const GoogleSheetsSyncView: React.FC<GoogleSheetsSyncViewProps> = ({
       }
       if (result.data.accessories && result.data.accessories.length > 0) {
         storageService.saveAccessories(result.data.accessories);
+      }
+      if (result.data.costings && result.data.costings.length > 0) {
+        storageService.saveProductCostings(result.data.costings);
       }
       onDataRefreshed();
     }

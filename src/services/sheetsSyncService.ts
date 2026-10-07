@@ -1,9 +1,9 @@
-import { CalculationRecord, Product, RawMaterial, Accessory } from '../types';
+import { CalculationRecord, Product, RawMaterial, Accessory, ProductCostingRecord } from '../types';
 import { storageService } from './storageService';
 
 export const APPS_SCRIPT_TEMPLATE = `/**
- * GOOGLE APPS SCRIPT UNTUK SINKRONISASI GARMENTPRO (KONSUMSI BAHAN)
- * ================================================================
+ * GOOGLE APPS SCRIPT UNTUK SINKRONISASI GARMENTPRO (KONSUMSI BAHAN & PRODUCT COSTING)
+ * ================================================================================
  * Langkah Penggunaan yang Benar:
  * 1. Buka Google Spreadsheet Anda (atau buat baru di drive.google.com)
  * 2. Klik menu 'Extensions' (Ekstensi) > 'Apps Script'
@@ -12,7 +12,7 @@ export const APPS_SCRIPT_TEMPLATE = `/**
  * 5. Klik tombol biru 'Deploy' (Terapkan) di kanan atas > pilih 'New deployment' (Penerapan baru)
  * 6. Klik ikon Gear (roda gigi) di kiri atas pop-up, pastikan pilih 'Web app' (Aplikasi web)
  * 7. Konfigurasi PENTING:
- *    - Description: GarmentPro Sync API
+ *    - Description: GarmentPro Sync API (Konsumsi & Costing)
  *    - Execute as: 'Me' (Saya - email Anda)
  *    - Who has access: 'Anyone' (Siapa saja)  <-- CRITICAL: Wajib pilih 'Anyone' agar browser bisa bertukar data tanpa terhalang login!
  * 8. Klik 'Deploy', lalu klik 'Authorize access' / 'Review permissions' dan pilih akun Google Anda.
@@ -46,6 +46,7 @@ function doGet(e) {
     var products = readSheetData(ss, 'Master_Produk');
     var rawMaterials = readSheetData(ss, 'Master_BahanBaku');
     var accessories = readSheetData(ss, 'Master_Accessories');
+    var costings = readSheetData(ss, 'Product_Costing');
 
     return ContentService.createTextOutput(JSON.stringify({
       status: 'success',
@@ -54,7 +55,8 @@ function doGet(e) {
         calculations: calculations,
         products: products,
         rawMaterials: rawMaterials,
-        accessories: accessories
+        accessories: accessories,
+        costings: costings
       }
     })).setMimeType(ContentService.MimeType.JSON);
 
@@ -103,6 +105,7 @@ function doPost(e) {
       var products = readSheetData(ss, 'Master_Produk');
       var rawMaterials = readSheetData(ss, 'Master_BahanBaku');
       var accessories = readSheetData(ss, 'Master_Accessories');
+      var costings = readSheetData(ss, 'Product_Costing');
 
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
@@ -111,7 +114,8 @@ function doPost(e) {
           calculations: calculations,
           products: products,
           rawMaterials: rawMaterials,
-          accessories: accessories
+          accessories: accessories,
+          costings: costings
         }
       })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -121,10 +125,11 @@ function doPost(e) {
       if (postData.products) writeGenericSheet(ss, 'Master_Produk', postData.products);
       if (postData.rawMaterials) writeGenericSheet(ss, 'Master_BahanBaku', postData.rawMaterials);
       if (postData.accessories) writeGenericSheet(ss, 'Master_Accessories', postData.accessories);
+      if (postData.costings) writeCostings(ss, postData.costings);
 
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
-        message: 'Semua data berhasil disimpan dan disinkronkan ke Google Sheets!',
+        message: 'Semua data (Konsumsi Bahan, Master Data, & Product Costing) berhasil disimpan dan disinkronkan ke Google Sheets!',
         timestamp: new Date().toISOString()
       })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -134,6 +139,15 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
         message: 'Kalkulasi ' + ((postData.calculation && postData.calculation.calculationNumber) || '') + ' berhasil disimpan di Google Sheets!',
+        timestamp: new Date().toISOString()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === 'save_costing') {
+      appendOrUpdateCosting(ss, postData.costing);
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        message: 'Costing ' + ((postData.costing && postData.costing.costingNumber) || '') + ' berhasil disimpan di Google Sheets!',
         timestamp: new Date().toISOString()
       })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -240,6 +254,97 @@ function appendOrUpdateCalculation(ss, calc) {
   }
 }
 
+function writeCostings(ss, costings) {
+  var sheet = getOrCreateSheet(ss, 'Product_Costing');
+  sheet.clear();
+  
+  var headers = [
+    'ID', 'No Costing', 'Judul Costing', 'Nama Produk', 'Kode Produk', 
+    'Jumlah Pesanan', 'Biaya Accessories / Pcs', 'Biaya Jasa / Pcs', 
+    'Total HPP / Pcs', 'Total HPP Batch', 'Markup (%)', 
+    'Harga Jual Target / Pcs', 'Tanggal', 'Rincian Item (JSON)', 
+    'Catatan', 'Terakhir Disinkron'
+  ];
+  sheet.appendRow(headers);
+  sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#fef3c7');
+
+  if (!costings || costings.length === 0) return;
+
+  for (var i = 0; i < costings.length; i++) {
+    var c = costings[i];
+    sheet.appendRow([
+      c.id,
+      c.costingNumber || '',
+      c.title || '',
+      c.productName || '',
+      c.productCode || '',
+      c.orderQuantity || 0,
+      c.totalAccessoriesCostPerUnit || 0,
+      c.totalServicesCostPerUnit || 0,
+      c.totalCostPerUnit || 0,
+      c.totalBatchCost || 0,
+      c.targetMarkupPercent || 0,
+      c.targetSellingPricePerUnit || 0,
+      c.calculationDate || '',
+      JSON.stringify(c),
+      c.notes || '',
+      new Date().toISOString()
+    ]);
+  }
+}
+
+function appendOrUpdateCosting(ss, costing) {
+  if (!costing) return;
+  var sheet = getOrCreateSheet(ss, 'Product_Costing');
+  var data = sheet.getDataRange().getValues();
+  var rowIndex = -1;
+
+  if (data.length > 1) {
+    for (var i = 1; i < data.length; i++) {
+      if (data[i][0] == costing.id || data[i][1] == costing.costingNumber) {
+        rowIndex = i + 1;
+        break;
+      }
+    }
+  }
+
+  var rowValues = [
+    costing.id,
+    costing.costingNumber || '',
+    costing.title || '',
+    costing.productName || '',
+    costing.productCode || '',
+    costing.orderQuantity || 0,
+    costing.totalAccessoriesCostPerUnit || 0,
+    costing.totalServicesCostPerUnit || 0,
+    costing.totalCostPerUnit || 0,
+    costing.totalBatchCost || 0,
+    costing.targetMarkupPercent || 0,
+    costing.targetSellingPricePerUnit || 0,
+    costing.calculationDate || '',
+    JSON.stringify(costing),
+    costing.notes || '',
+    new Date().toISOString()
+  ];
+
+  if (rowIndex > 0) {
+    sheet.getRange(rowIndex, 1, 1, rowValues.length).setValues([rowValues]);
+  } else {
+    if (data.length === 0 || (data.length === 1 && data[0][0] === '')) {
+      var headers = [
+        'ID', 'No Costing', 'Judul Costing', 'Nama Produk', 'Kode Produk', 
+        'Jumlah Pesanan', 'Biaya Accessories / Pcs', 'Biaya Jasa / Pcs', 
+        'Total HPP / Pcs', 'Total HPP Batch', 'Markup (%)', 
+        'Harga Jual Target / Pcs', 'Tanggal', 'Rincian Item (JSON)', 
+        'Catatan', 'Terakhir Disinkron'
+      ];
+      sheet.appendRow(headers);
+      sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#fef3c7');
+    }
+    sheet.appendRow(rowValues);
+  }
+}
+
 function writeGenericSheet(ss, sheetName, items) {
   var sheet = getOrCreateSheet(ss, sheetName);
   sheet.clear();
@@ -272,6 +377,19 @@ function readSheetData(ss, sheetName) {
     for (var i = 1; i < values.length; i++) {
       try {
         var rawJson = values[i][7];
+        if (rawJson && typeof rawJson === 'string' && rawJson.startsWith('{')) {
+          results.push(JSON.parse(rawJson));
+        }
+      } catch(e) {}
+    }
+    if (results.length > 0) return results;
+  }
+
+  // Khusus sheet Product_Costing, kolom ke-14 (index 13) menyimpan JSON object lengkap
+  if (sheetName === 'Product_Costing') {
+    for (var i = 1; i < values.length; i++) {
+      try {
+        var rawJson = values[i][13];
         if (rawJson && typeof rawJson === 'string' && rawJson.startsWith('{')) {
           results.push(JSON.parse(rawJson));
         }
@@ -471,6 +589,7 @@ export const sheetsSyncService = {
       products: Product[];
       rawMaterials: RawMaterial[];
       accessories: Accessory[];
+      costings?: ProductCostingRecord[];
     }
   ): Promise<{ success: boolean; message: string }> {
     const check = validateAndSanitizeUrl(url);
@@ -484,6 +603,7 @@ export const sheetsSyncService = {
     }
 
     const cleanUrl = check.url;
+    const costingsToPush = data.costings || storageService.getProductCostings();
 
     try {
       const response = await fetch(cleanUrl, {
@@ -496,6 +616,7 @@ export const sheetsSyncService = {
         body: JSON.stringify({
           action: 'push_all',
           ...data,
+          costings: costingsToPush,
         }),
       });
 
@@ -513,7 +634,7 @@ export const sheetsSyncService = {
         storageService.addSyncLog({
           action: 'Push Sinkronisasi Semua Data',
           status: 'success',
-          message: `${data.calculations.length} Perhitungan & Master Data berhasil disinkronkan ke Google Sheets`,
+          message: `${data.calculations.length} Perhitungan Konsumsi, ${costingsToPush.length} Costing HPP, & Master Data berhasil disinkronkan ke Google Sheets`,
         });
 
         return { success: true, message: result.message || 'Sinkronisasi berhasil!' };
@@ -577,6 +698,52 @@ export const sheetsSyncService = {
     }
   },
 
+  async pushSingleCosting(url: string, costing: ProductCostingRecord): Promise<{ success: boolean; message: string }> {
+    const check = validateAndSanitizeUrl(url);
+    if (!check.valid) {
+      return { success: false, message: check.error! };
+    }
+
+    const cleanUrl = check.url;
+
+    try {
+      const response = await fetch(cleanUrl, {
+        method: 'POST',
+        mode: 'cors',
+        redirect: 'follow',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8',
+        },
+        body: JSON.stringify({
+          action: 'save_costing',
+          costing: costing,
+        }),
+      });
+
+      const rawText = await response.text();
+      const result = parseAppsScriptResponse(rawText, cleanUrl);
+
+      if (result.status === 'success') {
+        storageService.addSyncLog({
+          action: `Sync Costing ${costing.costingNumber}`,
+          status: 'success',
+          message: `Costing HPP ${costing.costingNumber} (${costing.productName}) tersimpan di Google Sheets (Tab Product_Costing)`,
+        });
+        return { success: true, message: result.message || 'Costing HPP tersinkron ke Google Sheets!' };
+      } else {
+        throw new Error(result.message || 'Gagal menyimpan costing ke Google Sheets');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      storageService.addSyncLog({
+        action: `Sync Costing ${costing.costingNumber}`,
+        status: 'error',
+        message: msg,
+      });
+      return { success: false, message: msg };
+    }
+  },
+
   async pullAllFromSheets(
     url: string
   ): Promise<{
@@ -587,6 +754,7 @@ export const sheetsSyncService = {
       products?: Product[];
       rawMaterials?: RawMaterial[];
       accessories?: Accessory[];
+      costings?: ProductCostingRecord[];
     };
   }> {
     const check = validateAndSanitizeUrl(url);

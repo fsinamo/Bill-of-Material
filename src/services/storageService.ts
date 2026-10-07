@@ -4,10 +4,15 @@ import { DEFAULT_THEME_ID } from '../data/themes';
 
 const KEYS = {
   PRODUCTS: 'garment_master_products_v1',
+  PRODUCTS_BACKUP: 'garment_master_products_backup_v1',
   RAW_MATERIALS: 'garment_master_raw_materials_v1',
+  RAW_MATERIALS_BACKUP: 'garment_master_raw_materials_backup_v1',
   ACCESSORIES: 'garment_master_accessories_v1',
+  ACCESSORIES_BACKUP: 'garment_master_accessories_backup_v1',
   CALCULATIONS: 'garment_calculations_v1',
+  CALCULATIONS_BACKUP: 'garment_calculations_permanent_backup_v1',
   COSTINGS: 'garment_product_costings_v1',
+  COSTINGS_BACKUP: 'garment_product_costings_permanent_backup_v1',
   SHEETS_CONFIG: 'garment_sheets_config_v1',
   SHEETS_CONFIG_BACKUP: 'garment_sheets_config_permanent_backup_v1',
   WEBAPP_URL_PERMANENT: 'garment_permanent_webapp_url_v1',
@@ -132,29 +137,59 @@ export const storageService = {
 
   saveProducts(products: Product[]): void {
     localStorage.setItem(KEYS.PRODUCTS, JSON.stringify(products));
+    localStorage.setItem(KEYS.PRODUCTS_BACKUP, JSON.stringify(products));
+    saveToIndexedDB('products', products);
+    fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(products),
+    }).catch(() => {});
   },
 
   // Master Raw Materials
   getRawMaterials(): RawMaterial[] {
+    let list: RawMaterial[] = [];
     const raw = localStorage.getItem(KEYS.RAW_MATERIALS);
-    if (!raw) {
+    if (raw) {
+      try {
+        list = JSON.parse(raw);
+      } catch {
+        list = [];
+      }
+    }
+    if (!list || list.length === 0) {
+      const backupRaw = localStorage.getItem(KEYS.RAW_MATERIALS_BACKUP);
+      if (backupRaw) {
+        try {
+          const parsed = JSON.parse(backupRaw);
+          if (Array.isArray(parsed) && parsed.length > 0) list = parsed;
+        } catch {}
+      }
+    }
+    if (!list || list.length === 0) {
       this.saveRawMaterials(INITIAL_RAW_MATERIALS);
       return INITIAL_RAW_MATERIALS;
     }
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return INITIAL_RAW_MATERIALS;
-    }
+    return list;
   },
 
   saveRawMaterials(materials: RawMaterial[]): void {
     localStorage.setItem(KEYS.RAW_MATERIALS, JSON.stringify(materials));
+    localStorage.setItem(KEYS.RAW_MATERIALS_BACKUP, JSON.stringify(materials));
+    saveToIndexedDB('rawMaterials', materials);
+    fetch('/api/raw-materials', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(materials),
+    }).catch(() => {});
   },
 
   // Master Accessories
   getAccessories(): Accessory[] {
-    const raw = localStorage.getItem(KEYS.ACCESSORIES);
+    let raw = localStorage.getItem(KEYS.ACCESSORIES);
+    if (!raw) {
+      raw = localStorage.getItem(KEYS.ACCESSORIES_BACKUP);
+    }
     if (!raw) {
       this.saveAccessories(INITIAL_ACCESSORIES);
       return INITIAL_ACCESSORIES;
@@ -200,23 +235,58 @@ export const storageService = {
 
   saveAccessories(accessories: Accessory[]): void {
     localStorage.setItem(KEYS.ACCESSORIES, JSON.stringify(accessories));
+    localStorage.setItem(KEYS.ACCESSORIES_BACKUP, JSON.stringify(accessories));
+    saveToIndexedDB('accessories', accessories);
+    fetch('/api/accessories', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(accessories),
+    }).catch(() => {});
   },
 
-  // Product Costing Records
+  // Product Costing Records with Multi-Layer Permanent Persistence
   getProductCostings(): ProductCostingRecord[] {
+    let list: ProductCostingRecord[] = [];
     const raw = localStorage.getItem(KEYS.COSTINGS);
-    if (!raw) {
-      return [];
+    if (raw) {
+      try {
+        list = JSON.parse(raw);
+      } catch {
+        list = [];
+      }
     }
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return [];
+
+    // Fallback: check backup key if primary is empty
+    if ((!list || list.length === 0)) {
+      const backupRaw = localStorage.getItem(KEYS.COSTINGS_BACKUP);
+      if (backupRaw) {
+        try {
+          const parsed = JSON.parse(backupRaw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            list = parsed;
+          }
+        } catch {
+          // ignore
+        }
+      }
     }
+
+    return Array.isArray(list) ? list : [];
   },
 
   saveProductCostings(costings: ProductCostingRecord[]): void {
     localStorage.setItem(KEYS.COSTINGS, JSON.stringify(costings));
+    localStorage.setItem(KEYS.COSTINGS_BACKUP, JSON.stringify(costings));
+    saveToIndexedDB('productCostings', costings);
+
+    // Save to Server disk permanently
+    fetch('/api/costings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(costings),
+    }).catch((err) => {
+      console.warn('Server costings persist error:', err);
+    });
   },
 
   saveSingleProductCosting(costing: ProductCostingRecord): ProductCostingRecord[] {
@@ -240,22 +310,133 @@ export const storageService = {
     return updated;
   },
 
-  // Calculations
+  async syncPermanentCostings(): Promise<ProductCostingRecord[]> {
+    const local = this.getProductCostings();
+
+    // 1. Check server first
+    try {
+      const res = await fetch('/api/costings');
+      if (res.ok) {
+        const serverCostings: ProductCostingRecord[] = await res.json();
+        if (Array.isArray(serverCostings) && serverCostings.length > 0) {
+          // If server has records, merge with local (server has priority for permanent retention)
+          const mergedMap = new Map<string, ProductCostingRecord>();
+          serverCostings.forEach((c) => mergedMap.set(c.id, c));
+          local.forEach((c) => {
+            if (!mergedMap.has(c.id)) {
+              mergedMap.set(c.id, c);
+            }
+          });
+          const merged = Array.from(mergedMap.values());
+          this.saveProductCostings(merged);
+          return merged;
+        } else if (local.length > 0) {
+          // Server empty, push local to server
+          fetch('/api/costings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(local),
+          }).catch(() => {});
+        }
+      }
+    } catch {
+      // Server offline / network error
+    }
+
+    // 2. Check IndexedDB if local is still empty
+    if (local.length === 0) {
+      try {
+        const idbCostings = await getFromIndexedDB<ProductCostingRecord[]>('productCostings');
+        if (Array.isArray(idbCostings) && idbCostings.length > 0) {
+          this.saveProductCostings(idbCostings);
+          return idbCostings;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    return local;
+  },
+
+  // Calculations with Multi-Layer Permanent Persistence
   getCalculations(): CalculationRecord[] {
+    let list: CalculationRecord[] = [];
     const raw = localStorage.getItem(KEYS.CALCULATIONS);
-    if (!raw) {
+    if (raw) {
+      try {
+        list = JSON.parse(raw);
+      } catch {
+        list = [];
+      }
+    }
+
+    if (!list || list.length === 0) {
+      const backupRaw = localStorage.getItem(KEYS.CALCULATIONS_BACKUP);
+      if (backupRaw) {
+        try {
+          const parsed = JSON.parse(backupRaw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            list = parsed;
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    if (!list || list.length === 0) {
       this.saveCalculations(INITIAL_CALCULATIONS);
       return INITIAL_CALCULATIONS;
     }
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return INITIAL_CALCULATIONS;
-    }
+
+    return list;
   },
 
   saveCalculations(calculations: CalculationRecord[]): void {
     localStorage.setItem(KEYS.CALCULATIONS, JSON.stringify(calculations));
+    localStorage.setItem(KEYS.CALCULATIONS_BACKUP, JSON.stringify(calculations));
+    saveToIndexedDB('calculations', calculations);
+
+    // Save to Server disk permanently
+    fetch('/api/calculations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(calculations),
+    }).catch(() => {});
+  },
+
+  async syncPermanentCalculations(): Promise<CalculationRecord[]> {
+    const local = this.getCalculations();
+
+    try {
+      const res = await fetch('/api/calculations');
+      if (res.ok) {
+        const serverCalcs: CalculationRecord[] = await res.json();
+        if (Array.isArray(serverCalcs) && serverCalcs.length > 0) {
+          const mergedMap = new Map<string, CalculationRecord>();
+          serverCalcs.forEach((c) => mergedMap.set(c.id, c));
+          local.forEach((c) => {
+            if (!mergedMap.has(c.id)) {
+              mergedMap.set(c.id, c);
+            }
+          });
+          const merged = Array.from(mergedMap.values());
+          this.saveCalculations(merged);
+          return merged;
+        } else if (local.length > 0) {
+          fetch('/api/calculations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(local),
+          }).catch(() => {});
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    return local;
   },
 
   saveSingleCalculation(calculation: CalculationRecord): CalculationRecord[] {
