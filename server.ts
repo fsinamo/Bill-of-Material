@@ -1,0 +1,115 @@
+import express from 'express';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const app = express();
+const PORT = 3000;
+const HOST = '0.0.0.0';
+
+app.use(express.json());
+
+const DATA_DIR = path.join(__dirname, 'data');
+const CONFIG_FILE = path.join(DATA_DIR, 'sheets-config.json');
+
+// Ensure data directory exists
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+// Ensure sheets-config.json exists
+if (!fs.existsSync(CONFIG_FILE)) {
+  const initialConfig = {
+    webAppUrl: '',
+    spreadsheetName: 'Data_Produksi_Garment_Konsumsi_Bahan',
+    autoSyncOnSave: true,
+    lastUpdated: new Date().toISOString()
+  };
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(initialConfig, null, 2), 'utf-8');
+}
+
+// API: Get Google Sheets configuration
+app.get('/api/sheets-config', (req, res) => {
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
+      const parsed = JSON.parse(data);
+      return res.json(parsed);
+    }
+    return res.json({
+      webAppUrl: '',
+      spreadsheetName: 'Data_Produksi_Garment_Konsumsi_Bahan',
+      autoSyncOnSave: true
+    });
+  } catch (error) {
+    console.error('Error reading sheets config:', error);
+    return res.status(500).json({ error: 'Failed to read sheets configuration' });
+  }
+});
+
+// API: Save Google Sheets configuration permanently
+app.post('/api/sheets-config', (req, res) => {
+  try {
+    const newConfig = req.body;
+    if (!newConfig || typeof newConfig !== 'object') {
+      return res.status(400).json({ error: 'Invalid configuration payload' });
+    }
+
+    // Merge with existing config if present to avoid wiping other fields
+    let existing = {};
+    if (fs.existsSync(CONFIG_FILE)) {
+      try {
+        existing = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+      } catch {
+        existing = {};
+      }
+    }
+
+    const merged = {
+      ...existing,
+      ...newConfig,
+      lastUpdated: new Date().toISOString()
+    };
+
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2), 'utf-8');
+    return res.json({ success: true, config: merged });
+  } catch (error) {
+    console.error('Error saving sheets config:', error);
+    return res.status(500).json({ error: 'Failed to persist sheets configuration' });
+  }
+});
+
+// Health check
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Vite middleware for development or static serving for production
+const isProduction = process.env.NODE_ENV === 'production';
+
+if (!isProduction) {
+  const { createServer: createViteServer } = await import('vite');
+  const vite = await createViteServer({
+    server: {
+      middlewareMode: true,
+      host: HOST,
+      port: PORT,
+      allowedHosts: true,
+    },
+    appType: 'spa',
+  });
+  app.use(vite.middlewares);
+} else {
+  const distDir = path.join(__dirname, 'dist');
+  app.use(express.static(distDir));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+}
+
+app.listen(PORT, HOST, () => {
+  console.log(`GarmentPro server listening at http://${HOST}:${PORT}`);
+});

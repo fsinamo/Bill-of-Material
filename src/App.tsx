@@ -110,6 +110,11 @@ export default function App() {
 
   useEffect(() => {
     loadAllData();
+    storageService.syncPermanentSheetsConfig().then((synced) => {
+      if (synced && synced.webAppUrl) {
+        setSheetsConfig(synced);
+      }
+    });
   }, []);
 
   // Handlers for calculations

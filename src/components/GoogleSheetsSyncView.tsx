@@ -46,30 +46,92 @@ export const GoogleSheetsSyncView: React.FC<GoogleSheetsSyncViewProps> = ({
   const [copiedCode, setCopiedCode] = useState(false);
   const [activeTab, setActiveTab] = useState<'config' | 'code' | 'logs'>('config');
   const [logs, setLogs] = useState<SyncLog[]>(storageService.getSyncLogs());
+  const [autoSavedMessage, setAutoSavedMessage] = useState<string | null>(null);
 
-  const handleSaveConfig = () => {
+  // Sync state if parent config changes (e.g. from background server/IDB sync)
+  React.useEffect(() => {
+    if (config.webAppUrl && config.webAppUrl !== url) {
+      setUrl(config.webAppUrl);
+    }
+    setAutoSync(config.autoSyncOnSave);
+  }, [config.webAppUrl, config.autoSyncOnSave]);
+
+  // Centralized permanent save function
+  const persistConfig = (targetUrl: string, autoSyncVal: boolean, showBanner = true) => {
+    const trimmed = targetUrl.trim();
     const updated: GoogleSheetsConfig = {
       ...config,
-      webAppUrl: url.trim(),
-      autoSyncOnSave: autoSync,
+      webAppUrl: trimmed,
+      autoSyncOnSave: autoSyncVal,
     };
     onUpdateConfig(updated);
     storageService.saveSheetsConfig(updated);
-    setTestResult({ success: true, message: 'Pengaturan Google Sheets berhasil disimpan!' });
+    if (showBanner && trimmed) {
+      setAutoSavedMessage('Tersimpan permanen di server & browser');
+      setTimeout(() => setAutoSavedMessage(null), 3000);
+    }
+    return updated;
+  };
+
+  // Debounced auto-save when user enters or pastes a valid Apps Script URL
+  React.useEffect(() => {
+    const trimmed = url.trim();
+    if (trimmed && trimmed.includes('script.google.com/macros/s/') && trimmed !== config.webAppUrl) {
+      const timer = setTimeout(() => {
+        persistConfig(trimmed, autoSync);
+      }, 700);
+      return () => clearTimeout(timer);
+    }
+  }, [url, autoSync, config.webAppUrl]);
+
+  const handleBlurUrl = () => {
+    const trimmed = url.trim();
+    if (trimmed && trimmed !== config.webAppUrl) {
+      persistConfig(trimmed, autoSync);
+    }
+  };
+
+  const handleSaveConfig = () => {
+    const trimmed = url.trim();
+    persistConfig(trimmed, autoSync, false);
+    setTestResult({
+      success: true,
+      message: 'Pengaturan Google Sheets berhasil disimpan PERMANEN! URL tidak akan hilang saat reload atau berpindah tab/perangkat.',
+    });
+  };
+
+  const handleClearSavedUrl = () => {
+    if (confirm('Apakah Anda yakin ingin menghapus Web App URL yang tersimpan secara permanen?')) {
+      const cleared = storageService.clearSheetsConfigPermanently();
+      setUrl('');
+      onUpdateConfig(cleared);
+      setTestResult({
+        success: true,
+        message: 'Web App URL berhasil dihapus. Anda dapat memasukkan URL baru kapan saja.',
+      });
+    }
   };
 
   const handleTestConnection = async () => {
+    const targetUrl = url.trim();
+    if (targetUrl) {
+      persistConfig(targetUrl, autoSync, false);
+    }
     setIsTesting(true);
     setTestResult(null);
-    const result = await sheetsSyncService.testConnection(url);
+    const result = await sheetsSyncService.testConnection(targetUrl);
     setIsTesting(false);
     setTestResult(result);
     setLogs(storageService.getSyncLogs());
   };
 
   const handlePushAll = async () => {
+    const targetUrl = url.trim();
+    if (targetUrl) {
+      persistConfig(targetUrl, autoSync, false);
+    }
     setIsPushing(true);
-    const result = await sheetsSyncService.pushAllToSheets(url, {
+    const result = await sheetsSyncService.pushAllToSheets(targetUrl, {
       calculations,
       products,
       rawMaterials,
@@ -82,8 +144,12 @@ export const GoogleSheetsSyncView: React.FC<GoogleSheetsSyncViewProps> = ({
   };
 
   const handlePullAll = async () => {
+    const targetUrl = url.trim();
+    if (targetUrl) {
+      persistConfig(targetUrl, autoSync, false);
+    }
     setIsPulling(true);
-    const result = await sheetsSyncService.pullAllFromSheets(url);
+    const result = await sheetsSyncService.pullAllFromSheets(targetUrl);
     setIsPulling(false);
     if (result.success && result.data) {
       if (result.data.calculations && result.data.calculations.length > 0) {
@@ -111,10 +177,10 @@ export const GoogleSheetsSyncView: React.FC<GoogleSheetsSyncViewProps> = ({
   };
 
   const handleResetData = () => {
-    if (confirm('Apakah Anda yakin ingin mereset seluruh data kembali ke contoh bawaan Kopelriem CN1?')) {
+    if (confirm('Apakah Anda yakin ingin mereset seluruh data kembali ke contoh bawaan Kopelriem CN1? (Catatan: Pengaturan Web App URL Google Sheets tetap aman & tidak akan terhapus).')) {
       storageService.resetAllToDefault();
       onDataRefreshed();
-      setTestResult({ success: true, message: 'Data berhasil direset ke contoh default Kopelriem CN1.' });
+      setTestResult({ success: true, message: 'Data berhasil direset ke contoh default Kopelriem CN1. URL Sheets tetap tersimpan aman.' });
     }
   };
 
@@ -235,20 +301,71 @@ export const GoogleSheetsSyncView: React.FC<GoogleSheetsSyncViewProps> = ({
 
               <div className="space-y-4 text-xs">
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1.5">
-                    Google Apps Script Web App URL <span className="text-rose-500">*</span>
-                  </label>
+                  <div className="flex items-center justify-between gap-2 mb-1.5">
+                    <label className="block font-semibold text-slate-700">
+                      Google Apps Script Web App URL <span className="text-rose-500">*</span>
+                    </label>
+                    {autoSavedMessage && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 animate-in fade-in">
+                        <Check className="w-3 h-3" />
+                        <span>{autoSavedMessage}</span>
+                      </span>
+                    )}
+                  </div>
                   <input
                     id="input-sheets-webapp-url"
                     type="url"
                     value={url}
                     onChange={(e) => setUrl(e.target.value)}
+                    onBlur={handleBlurUrl}
                     placeholder="https://script.google.com/macros/s/AKfycbx.../exec"
                     className="w-full rounded-xl border border-slate-300 px-3.5 py-2.5 font-mono text-xs text-slate-800 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 outline-hidden"
                   />
-                  <p className="mt-1.5 text-slate-500">
-                    Didapat dari menu Google Sheets: <em>Extensions &gt; Apps Script &gt; Deploy &gt; New deployment &gt; Web app</em> (akses: Anyone).
-                  </p>
+                  <div className="flex items-center justify-between gap-2 mt-1.5">
+                    <p className="text-slate-500">
+                      Didapat dari menu Google Sheets: <em>Extensions &gt; Apps Script &gt; Deploy &gt; New deployment &gt; Web app</em> (akses: Anyone).
+                    </p>
+                    {url && (
+                      <span className="text-[10px] text-emerald-600 font-medium shrink-0">
+                        Otomatis tersimpan permanen saat diketik / dialihkan
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Info Status URL Tersimpan Permanen */}
+                  {config.webAppUrl && (
+                    <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/70 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-emerald-900">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        <div>
+                          <div className="font-bold text-[11px]">URL Tersimpan Permanen (Server & Browser)</div>
+                          <div className="text-[10px] text-emerald-700">
+                            Akan selalu tersimpan selama belum Anda ganti atau hapus secara eksplisit.
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(config.webAppUrl);
+                            setAutoSavedMessage('URL disalin ke clipboard');
+                            setTimeout(() => setAutoSavedMessage(null), 2500);
+                          }}
+                          className="px-2.5 py-1 text-[11px] font-semibold bg-white border border-emerald-300 hover:bg-emerald-100 rounded-lg text-emerald-800 transition"
+                        >
+                          Salin URL
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleClearSavedUrl}
+                          className="px-2.5 py-1 text-[11px] font-semibold bg-white border border-rose-300 hover:bg-rose-50 rounded-lg text-rose-700 transition"
+                        >
+                          Hapus URL
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Deteksi Link Google Spreadsheet */}
                   {url && url.includes('docs.google.com/spreadsheets') && (
@@ -288,7 +405,11 @@ export const GoogleSheetsSyncView: React.FC<GoogleSheetsSyncViewProps> = ({
                       </div>
                       <button
                         type="button"
-                        onClick={() => setUrl(url.replace(/\/dev$/, '/exec'))}
+                        onClick={() => {
+                          const converted = url.replace(/\/dev$/, '/exec');
+                          setUrl(converted);
+                          persistConfig(converted, autoSync);
+                        }}
                         className="rounded-lg bg-blue-700 hover:bg-blue-800 text-white px-2.5 py-1 text-[11px] font-bold shrink-0 transition"
                       >
                         Ubah ke /exec
@@ -308,7 +429,13 @@ export const GoogleSheetsSyncView: React.FC<GoogleSheetsSyncViewProps> = ({
                     <input
                       type="checkbox"
                       checked={autoSync}
-                      onChange={(e) => setAutoSync(e.target.checked)}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setAutoSync(checked);
+                        if (url.trim()) {
+                          persistConfig(url.trim(), checked);
+                        }
+                      }}
                       className="sr-only peer"
                     />
                     <div className="w-11 h-6 bg-slate-200 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
@@ -319,9 +446,10 @@ export const GoogleSheetsSyncView: React.FC<GoogleSheetsSyncViewProps> = ({
                   <button
                     id="btn-save-sheets-config"
                     onClick={handleSaveConfig}
-                    className="rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 transition shadow-xs"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 transition shadow-xs"
                   >
-                    Simpan Pengaturan
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Simpan Permanen</span>
                   </button>
                   <button
                     id="btn-test-sheets-connection"
