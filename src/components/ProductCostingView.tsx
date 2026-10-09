@@ -49,6 +49,40 @@ import {
   Building2,
 } from 'lucide-react';
 
+/**
+ * Helper to dynamically scale down font size when currency value reaches billions (belasan milyar),
+ * preventing overflow in cards or boxes.
+ */
+export const getAdaptiveCurrencyClass = (amount: number, isMain = false): string => {
+  const digits = Math.round(Math.abs(amount)).toString().length;
+  if (isMain) {
+    if (digits >= 13) return 'text-base sm:text-lg lg:text-xl font-black break-words tracking-tight leading-snug';
+    if (digits >= 11) return 'text-lg sm:text-xl lg:text-2xl font-black break-words tracking-tight leading-snug';
+    if (digits >= 9) return 'text-xl sm:text-2xl lg:text-3xl font-black tracking-tight leading-snug';
+    return 'text-2xl sm:text-3xl font-black tracking-tight';
+  }
+  if (digits >= 13) return 'text-xs sm:text-sm lg:text-base font-black break-words tracking-tight leading-snug';
+  if (digits >= 11) return 'text-sm sm:text-base lg:text-lg font-black break-words tracking-tight leading-snug';
+  if (digits >= 9) return 'text-base sm:text-lg lg:text-xl font-black tracking-tight leading-snug';
+  return 'text-xl sm:text-2xl font-black tracking-tight';
+};
+
+/**
+ * Helper to display human-readable magnitude for large Indonesian currency values (Miliar, Juta, Triliun).
+ */
+export const formatShortIndonesianCurrency = (amount: number): string | null => {
+  if (Math.abs(amount) >= 1_000_000_000_000) {
+    return `≈ Rp ${(amount / 1_000_000_000_000).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Triliun`;
+  }
+  if (Math.abs(amount) >= 1_000_000_000) {
+    return `≈ Rp ${(amount / 1_000_000_000).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Miliar`;
+  }
+  if (Math.abs(amount) >= 1_000_000) {
+    return `≈ Rp ${(amount / 1_000_000).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Juta`;
+  }
+  return null;
+};
+
 interface ProductCostingViewProps {
   products: Product[];
   accessories: Accessory[];
@@ -322,20 +356,13 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     };
   };
 
-  // Load product accessories into costing table when selected product or referenced calc changes
-  useEffect(() => {
-    if (!currentProduct) return;
-
-    // Sinkronkan order quantity dari perhitungan jika ada
-    if (activeReferencedCalc?.orderQuantity && activeReferencedCalc.orderQuantity > 0) {
-      setOrderQuantity(activeReferencedCalc.orderQuantity);
-    }
-
-    setTitle(
-      `Costing HPP ${currentProduct.name} (Batch ${(activeReferencedCalc?.orderQuantity || orderQuantity).toLocaleString('id-ID')} Pcs)`
-    );
-
-    const items: ProductCostingItem[] = currentProduct.accessories.map((rel) => {
+  // Helper to build initial default costing items from product accessories and standard services
+  const buildDefaultItems = (
+    prod: Product,
+    orderQty: number,
+    calcRef?: CalculationRecord | null
+  ): ProductCostingItem[] => {
+    const items: ProductCostingItem[] = (prod.accessories || []).map((rel) => {
       const acc = accessories.find((a) => a.id === rel.accessoryId) || {
         id: rel.accessoryId,
         code: 'ACC-UNK',
@@ -348,7 +375,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
 
       const priceInfo = getAccessoryPriceInfo(acc);
       const usageQtyPerProduct = rel.qtyPerProduct;
-      const totalUsageQty = usageQtyPerProduct * orderQuantity;
+      const totalUsageQty = usageQtyPerProduct * orderQty;
       const totalCostPerProduct = usageQtyPerProduct * priceInfo.unitPrice;
       const totalCostBatch = totalUsageQty * priceInfo.unitPrice;
 
@@ -359,7 +386,9 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
         rawMaterialName: priceInfo.rawMaterialName,
         rawMaterialUnitPrice: priceInfo.rawMaterialUnitPrice,
         yieldPerUnit: priceInfo.yieldPerUnit,
-        materialUsagePerPcs: priceInfo.materialUsagePerPcs || (priceInfo.yieldPerUnit ? Number((1 / priceInfo.yieldPerUnit).toFixed(6)) : acc.materialUsagePerPcs),
+        materialUsagePerPcs:
+          priceInfo.materialUsagePerPcs ||
+          (priceInfo.yieldPerUnit ? Number((1 / priceInfo.yieldPerUnit).toFixed(6)) : acc.materialUsagePerPcs),
         rawMaterialSize: priceInfo.rawMaterialSize || acc.rawMaterialSize,
         pieceCuttingSize: priceInfo.pieceCuttingSize || acc.pieceCuttingSize,
         divisionFormula: priceInfo.divisionFormula || acc.divisionFormula,
@@ -373,8 +402,94 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
       };
     });
 
-    setCostingItems(items);
-  }, [selectedProductId, currentProduct, activeReferencedCalc, accessories, rawMaterials]);
+    // Automatically include standard master services if not already present in product
+    const standardServices = accessories.filter((a) => a.category === 'service');
+    standardServices.forEach((srv) => {
+      if (!items.some((i) => i.accessoryId === srv.id)) {
+        const srvPrice = srv.purchasePrice || 0;
+        items.push({
+          accessoryId: srv.id,
+          accessoryName: srv.name,
+          accessoryCategory: 'service',
+          rawMaterialName: '-',
+          rawMaterialUnitPrice: 0,
+          yieldPerUnit: 1,
+          materialUsagePerPcs: 1,
+          unitPrice: srvPrice,
+          usageQtyPerProduct: 1,
+          totalUsageQty: orderQty,
+          totalCostPerProduct: srvPrice,
+          totalCostBatch: srvPrice * orderQty,
+          notes: srv.notes || `Tarif Rp ${srvPrice.toLocaleString('id-ID')} / ${srv.unit}`,
+        });
+      }
+    });
+
+    return items;
+  };
+
+  const isInitializedRef = React.useRef(false);
+  const prevInitialCalcIdRef = React.useRef<string | undefined>(initialCalculationId);
+  const prevInitialProdIdRef = React.useRef<string | undefined>(initialProductId);
+
+  // Safe initial setup: runs ONCE on mount or when explicit external navigation props change.
+  // NEVER overwrites user-edited services or ready-made accessories on background re-renders!
+  useEffect(() => {
+    const propChanged =
+      (initialCalculationId && initialCalculationId !== prevInitialCalcIdRef.current) ||
+      (initialProductId && initialProductId !== prevInitialProdIdRef.current);
+
+    if (propChanged) {
+      prevInitialCalcIdRef.current = initialCalculationId;
+      prevInitialProdIdRef.current = initialProductId;
+      if (initialProductId) setSelectedProductId(initialProductId);
+      if (initialCalculationId) setSelectedCalculationId(initialCalculationId);
+      setActiveCostingId(null);
+      const targetProd = products.find((p) => p.id === initialProductId) || currentProduct;
+      if (targetProd) {
+        const targetCalc = allCalculations.find((c) => c.id === initialCalculationId) || null;
+        const targetQty = targetCalc?.orderQuantity || 1000;
+        setOrderQuantity(targetQty);
+        setTitle(`Costing HPP ${targetProd.name} (Batch ${targetQty.toLocaleString('id-ID')} Pcs)`);
+        setCostingItems(buildDefaultItems(targetProd, targetQty, targetCalc));
+      }
+      return;
+    }
+
+    if (!isInitializedRef.current && currentProduct) {
+      isInitializedRef.current = true;
+      const initialQty = activeReferencedCalc?.orderQuantity || orderQuantity || 1000;
+      setOrderQuantity(initialQty);
+      setTitle(`Costing HPP ${currentProduct.name} (Batch ${initialQty.toLocaleString('id-ID')} Pcs)`);
+      if (costingItems.length === 0) {
+        setCostingItems(buildDefaultItems(currentProduct, initialQty, activeReferencedCalc));
+      }
+    }
+  }, [currentProduct, initialProductId, initialCalculationId]);
+
+  // Handler for explicit product dropdown selection by user
+  const handleProductChange = (newProductId: string) => {
+    setSelectedProductId(newProductId);
+    setActiveCostingId(null);
+    const newProd = products.find((p) => p.id === newProductId);
+    if (!newProd) return;
+
+    const newMatchingCalc = allCalculations.find(
+      (c) => c.productId === newProductId || c.productName.trim().toLowerCase() === newProd.name.trim().toLowerCase()
+    );
+    const targetCalc = newMatchingCalc || null;
+    const targetQty = targetCalc?.orderQuantity || orderQuantity || 1000;
+    setOrderQuantity(targetQty);
+
+    const newNum = `CST-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`;
+    setCostingNumber(newNum);
+    setTitle(`Costing HPP ${newProd.name} (Batch ${targetQty.toLocaleString('id-ID')} Pcs)`);
+
+    const defaultItems = buildDefaultItems(newProd, targetQty, targetCalc);
+    setCostingItems(defaultItems);
+    setNotice(`Memuat formulir baru costing untuk produk: ${newProd.name}`);
+    setTimeout(() => setNotice(null), 3000);
+  };
 
   // Recalculate batch costs when orderQuantity or costing items change
   const updatedItems = useMemo(() => {
@@ -641,9 +756,13 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     };
 
     setActiveCostingId(targetId);
+    setCostingItems(updatedItems);
     const updated = storageService.saveSingleProductCosting(record);
     setSavedCostings(updated);
     if (onCostingsUpdated) onCostingsUpdated();
+
+    const accCount = updatedItems.filter((i) => i.accessoryCategory !== 'service').length;
+    const srvCount = updatedItems.filter((i) => i.accessoryCategory === 'service').length;
 
     const targetUrl = (effectiveSheetsConfig?.webAppUrl || storageService.getSheetsConfig()?.webAppUrl || '').trim();
     if (targetUrl) {
@@ -658,14 +777,14 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
           };
           storageService.saveSingleProductCosting(syncedRecord);
           setSavedCostings(storageService.getProductCostings());
-          setNotice(`✓ Kalkulasi Costing "${record.costingNumber}" berhasil diperbarui & otomatis tersimpan ke Google Sheets (Tab Product_Costing)!`);
+          setNotice(`✓ Dokumen Costing "${record.costingNumber}" berhasil diperbarui & otomatis tersimpan ke Google Sheets! Tersimpan ${updatedItems.length} item (${accCount} aksesoris & ${srvCount} jasa).`);
         } else {
-          setNotice(`Kalkulasi Costing diperbarui di penyimpanan lokal (Sheets: ${res.message})`);
+          setNotice(`Dokumen Costing disimpan di penyimpanan lokal (${updatedItems.length} item: ${accCount} aksesoris, ${srvCount} jasa). Sheets: ${res.message}`);
         }
         setTimeout(() => setNotice(null), 5000);
       });
     } else {
-      setNotice(`Kalkulasi Costing "${record.costingNumber}" berhasil diperbarui di penyimpanan lokal!`);
+      setNotice(`✓ Dokumen Costing "${record.costingNumber}" berhasil diperbarui di penyimpanan lokal! Tersimpan ${updatedItems.length} item (${accCount} aksesoris & ${srvCount} jasa pengerjaan).`);
       setTimeout(() => setNotice(null), 4000);
     }
   };
@@ -708,9 +827,13 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
       updatedAt: new Date().toISOString(),
     };
 
+    setCostingItems(updatedItems);
     const updated = storageService.saveSingleProductCosting(record);
     setSavedCostings(updated);
     if (onCostingsUpdated) onCostingsUpdated();
+
+    const accCount = updatedItems.filter((i) => i.accessoryCategory !== 'service').length;
+    const srvCount = updatedItems.filter((i) => i.accessoryCategory === 'service').length;
 
     const targetUrl = (effectiveSheetsConfig?.webAppUrl || storageService.getSheetsConfig()?.webAppUrl || '').trim();
     if (targetUrl) {
@@ -725,14 +848,14 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
           };
           storageService.saveSingleProductCosting(syncedRecord);
           setSavedCostings(storageService.getProductCostings());
-          setNotice(`✓ Dokumen baru Costing "${finalNum}" berhasil disimpan & otomatis tersimpan ke Google Sheets (Tab Product_Costing)!`);
+          setNotice(`✓ Dokumen baru Costing "${finalNum}" berhasil disimpan & otomatis tersimpan ke Google Sheets! Tersimpan ${updatedItems.length} item (${accCount} aksesoris & ${srvCount} jasa).`);
         } else {
-          setNotice(`Dokumen baru Costing disimpan di penyimpanan lokal (Sheets: ${res.message})`);
+          setNotice(`Dokumen baru Costing disimpan di penyimpanan lokal (${updatedItems.length} item: ${accCount} aksesoris, ${srvCount} jasa). Sheets: ${res.message}`);
         }
         setTimeout(() => setNotice(null), 5000);
       });
     } else {
-      setNotice(`Dokumen baru Costing "${finalNum}" berhasil dibuat & disimpan di penyimpanan lokal!`);
+      setNotice(`✓ Dokumen baru Costing "${finalNum}" berhasil dibuat & disimpan! Tersimpan ${updatedItems.length} item (${accCount} aksesoris & ${srvCount} jasa pengerjaan).`);
       setTimeout(() => setNotice(null), 4000);
     }
   };
@@ -837,10 +960,31 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     setCalculationDate(rec.calculationDate);
     setNotes(rec.notes || '');
     if (rec.targetMarkupPercent !== undefined) setTargetMarkupPercent(rec.targetMarkupPercent);
-    setCostingItems(rec.items);
+
+    // Validate and restore all items from the saved record (both accessories and services)
+    const restoredItems: ProductCostingItem[] = (rec.items || []).map((item) => {
+      const usageQty = item.usageQtyPerProduct ?? 1;
+      const unitPrice = item.unitPrice ?? 0;
+      const totalUsageQty = item.totalUsageQty ?? (usageQty * rec.orderQuantity);
+      const totalCostPerProduct = item.totalCostPerProduct ?? (usageQty * unitPrice);
+      const totalCostBatch = item.totalCostBatch ?? (totalUsageQty * unitPrice);
+      return {
+        ...item,
+        accessoryCategory: item.accessoryCategory || (item.accessoryId.startsWith('jasa') ? 'service' : 'raw_material_based'),
+        usageQtyPerProduct: usageQty,
+        unitPrice,
+        totalUsageQty,
+        totalCostPerProduct,
+        totalCostBatch,
+      };
+    });
+
+    setCostingItems(restoredItems);
     setCostingSubTab('calculator');
-    setNotice(`Memuat arsip costing: ${rec.costingNumber}`);
-    setTimeout(() => setNotice(null), 3000);
+    const accCount = restoredItems.filter((i) => i.accessoryCategory !== 'service').length;
+    const srvCount = restoredItems.filter((i) => i.accessoryCategory === 'service').length;
+    setNotice(`✓ Berhasil memuat arsip costing "${rec.costingNumber}" (${accCount} aksesoris & ${srvCount} jasa pengerjaan).`);
+    setTimeout(() => setNotice(null), 4000);
   };
 
   // Mulai Perhitungan Baru untuk Product Costing (Reset formulir bersih & generate nomor dokumen baru)
@@ -848,7 +992,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     const newNum = `CST-${new Date().getFullYear()}-${String(Math.floor(Math.random() * 900) + 100)}`;
     setActiveCostingId(null);
     setCostingNumber(newNum);
-    const prod = products[0] || currentProduct;
+    const prod = products.find((p) => p.id === selectedProductId) || products[0] || currentProduct;
     if (prod) {
       setSelectedProductId(prod.id);
       setTitle(`Costing HPP ${prod.name} (Batch 1.000 Pcs)`);
@@ -862,65 +1006,8 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     setNotes('Estimasi biaya komponen accessories dan ongkos jasa pengerjaan untuk penentuan HPP.');
     setTargetMarkupPercent(25);
 
-    // Inisialisasi ulang items dengan rincian default produk
     if (prod) {
-      const items: ProductCostingItem[] = (prod.accessories || []).map((rel) => {
-        const acc = accessories.find((a) => a.id === rel.accessoryId);
-        if (!acc) {
-          return {
-            accessoryId: rel.accessoryId,
-            accessoryName: 'Accessories',
-            accessoryCategory: 'raw_material_based' as const,
-            unitPrice: 0,
-            usageQtyPerProduct: rel.qtyPerProduct,
-            totalUsageQty: rel.qtyPerProduct * 1000,
-            totalCostPerProduct: 0,
-            totalCostBatch: 0,
-          };
-        }
-        const priceInfo = getAccessoryPriceInfo(acc);
-        const usageQty = rel.qtyPerProduct;
-        return {
-          accessoryId: acc.id,
-          accessoryName: acc.name,
-          accessoryCategory: acc.category,
-          rawMaterialName: priceInfo.rawMaterialName,
-          rawMaterialUnitPrice: priceInfo.rawMaterialUnitPrice,
-          yieldPerUnit: priceInfo.yieldPerUnit,
-          materialUsagePerPcs: priceInfo.yieldPerUnit ? Number((1 / priceInfo.yieldPerUnit).toFixed(6)) : acc.materialUsagePerPcs,
-          rawMaterialSize: acc.rawMaterialSize,
-          pieceCuttingSize: acc.pieceCuttingSize,
-          divisionFormula: acc.divisionFormula,
-          differentSizeNotes: acc.differentSizeNotes,
-          unitPrice: priceInfo.unitPrice,
-          usageQtyPerProduct: usageQty,
-          totalUsageQty: usageQty * 1000,
-          totalCostPerProduct: usageQty * priceInfo.unitPrice,
-          totalCostBatch: usageQty * 1000 * priceInfo.unitPrice,
-          notes: priceInfo.detailText,
-        };
-      });
-
-      // Tambahkan jasa default
-      const defaultServices = accessories.filter((a) => a.category === 'service');
-      defaultServices.forEach((srv) => {
-        const srvPrice = srv.purchasePrice || 0;
-        items.push({
-          accessoryId: srv.id,
-          accessoryName: srv.name,
-          accessoryCategory: 'service',
-          rawMaterialName: '-',
-          rawMaterialUnitPrice: 0,
-          yieldPerUnit: 1,
-          unitPrice: srvPrice,
-          usageQtyPerProduct: 1,
-          totalUsageQty: 1000,
-          totalCostPerProduct: srvPrice,
-          totalCostBatch: srvPrice * 1000,
-          notes: srv.notes || 'Tarif Jasa Pengerjaan',
-        });
-      });
-
+      const items = buildDefaultItems(prod, 1000, activeReferencedCalc);
       setCostingItems(items);
     }
 
@@ -1239,10 +1326,10 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                         <td className="py-3 px-4 text-right font-mono text-indigo-700 font-semibold">
                           Rp {srvCost.toLocaleString('id-ID', { maximumFractionDigits: 1 })}
                         </td>
-                        <td className="py-3 px-4 text-right font-mono font-black text-slate-900">
+                        <td className="py-3 px-4 text-right font-mono font-black text-slate-900 whitespace-nowrap">
                           Rp {rec.totalCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </td>
-                        <td className="py-3 px-4 text-right font-mono font-black text-amber-900">
+                        <td className="py-3 px-4 text-right font-mono font-black text-amber-900 whitespace-nowrap">
                           Rp {rec.totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                         </td>
                         <td className="py-3 px-4 text-slate-500 font-mono text-[11px]">{rec.calculationDate}</td>
@@ -1320,7 +1407,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                 </label>
                 <select
                   value={selectedProductId}
-                  onChange={(e) => setSelectedProductId(e.target.value)}
+                  onChange={(e) => handleProductChange(e.target.value)}
                   className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 font-bold outline-hidden focus:border-amber-600 focus:ring-1 focus:ring-amber-600 text-xs"
                 >
                   {products.map((p) => (
@@ -1729,10 +1816,10 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                     <td colSpan={6} className="py-2.5 px-4 text-right uppercase text-xs">
                       Total Biaya Accessories untuk {orderQuantity.toLocaleString('id-ID')} Pcs Pesanan:
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono text-slate-600 text-xs">
+                    <td className="py-2.5 px-3 text-right font-mono text-slate-600 text-xs whitespace-nowrap">
                       Rp {totalAccessoriesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / pcs
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono font-black text-amber-950 text-base bg-amber-100/80">
+                    <td className="py-2.5 px-3 text-right font-mono font-black text-amber-950 text-sm sm:text-base bg-amber-100/80 whitespace-nowrap">
                       Rp {totalAccessoriesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                     </td>
                     <td></td>
@@ -1916,10 +2003,10 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                     <td colSpan={6} className="py-2.5 px-4 text-right uppercase text-xs">
                       Total Biaya Jasa untuk {orderQuantity.toLocaleString('id-ID')} Pcs Pesanan:
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono text-indigo-800 text-xs">
+                    <td className="py-2.5 px-3 text-right font-mono text-indigo-800 text-xs whitespace-nowrap">
                       Rp {totalServicesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / pcs
                     </td>
-                    <td className="py-2.5 px-3 text-right font-mono font-black text-indigo-950 text-base bg-indigo-200/70">
+                    <td className="py-2.5 px-3 text-right font-mono font-black text-indigo-950 text-sm sm:text-base bg-indigo-200/70 whitespace-nowrap">
                       Rp {totalServicesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                     </td>
                     <td></td>
@@ -1929,97 +2016,118 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
             </div>
           </div>
 
-          {/* Financial KPI Cards & Margin Simulator - Disesuaikan dengan Jumlah Order */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Financial KPI Cards & Margin Simulator - Disesuaikan dengan Jumlah Order & Nilai Besar (Milyaran) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Card 1: Total Biaya Aksesoris Pesanan */}
-            <div className="rounded-2xl border border-amber-300 bg-amber-50/40 p-4 shadow-xs flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900">
+            <div className="rounded-2xl border border-amber-300 bg-amber-50/40 p-4 shadow-xs flex flex-col justify-between min-w-0 overflow-hidden">
+              <div className="min-w-0">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900 truncate">
                     Total Accessories ({orderQuantity.toLocaleString('id-ID')} Pcs)
                   </span>
-                  <span className="rounded-md bg-amber-200/80 text-amber-950 px-1.5 py-0.2 text-[9px] font-bold">
+                  <span className="rounded-md bg-amber-200/80 text-amber-950 px-1.5 py-0.2 text-[9px] font-bold shrink-0">
                     Pesanan
                   </span>
                 </div>
-                <div className="mt-1 font-mono font-black text-2xl text-amber-950">
-                  Rp {totalAccessoriesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                <div className="mt-1 font-mono text-amber-950 min-w-0" title={`Rp ${totalAccessoriesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`}>
+                  <div className={getAdaptiveCurrencyClass(totalAccessoriesBatchCost)}>
+                    Rp {totalAccessoriesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                  </div>
+                  {formatShortIndonesianCurrency(totalAccessoriesBatchCost) && (
+                    <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200/80 text-amber-950">
+                      {formatShortIndonesianCurrency(totalAccessoriesBatchCost)}
+                    </span>
+                  )}
                 </div>
                 <p className="text-[10px] text-amber-900 mt-1">
-                  Akumulasi seluruh komponen accessories untuk {orderQuantity.toLocaleString('id-ID')} pcs
+                  Akumulasi seluruh komponen accessories ({accessoryItems.length} item)
                 </p>
               </div>
 
-              <div className="mt-3 pt-2 border-t border-amber-200/80 flex items-center justify-between text-[11px]">
-                <span className="text-slate-600">Biaya Satuan:</span>
-                <span className="font-mono font-bold text-slate-800">
+              <div className="mt-3 pt-2 border-t border-amber-200/80 flex items-center justify-between text-[11px] gap-2">
+                <span className="text-slate-600 shrink-0">Biaya Satuan:</span>
+                <span className="font-mono font-bold text-slate-800 truncate text-right">
                   Rp {totalAccessoriesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / pcs
                 </span>
               </div>
             </div>
 
             {/* Card 2: Total Biaya Jasa Pesanan */}
-            <div className="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-4 shadow-xs flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-900">
+            <div className="rounded-2xl border border-indigo-200 bg-indigo-50/50 p-4 shadow-xs flex flex-col justify-between min-w-0 overflow-hidden">
+              <div className="min-w-0">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-900 truncate">
                     Total Jasa ({orderQuantity.toLocaleString('id-ID')} Pcs)
                   </span>
-                  <span className="rounded-md bg-indigo-200/80 text-indigo-950 px-1.5 py-0.2 text-[9px] font-bold">
+                  <span className="rounded-md bg-indigo-200/80 text-indigo-950 px-1.5 py-0.2 text-[9px] font-bold shrink-0">
                     Pesanan
                   </span>
                 </div>
-                <div className="mt-1 font-mono font-black text-2xl text-indigo-950">
-                  Rp {totalServicesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                <div className="mt-1 font-mono text-indigo-950 min-w-0" title={`Rp ${totalServicesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`}>
+                  <div className={getAdaptiveCurrencyClass(totalServicesBatchCost)}>
+                    Rp {totalServicesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                  </div>
+                  {formatShortIndonesianCurrency(totalServicesBatchCost) && (
+                    <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-200/80 text-indigo-950">
+                      {formatShortIndonesianCurrency(totalServicesBatchCost)}
+                    </span>
+                  )}
                 </div>
                 <p className="text-[10px] text-indigo-800 mt-1">
-                  Total ongkos jahit, bordir, cutting & finishing untuk {orderQuantity.toLocaleString('id-ID')} pcs
+                  Total ongkos pengerjaan ({serviceItems.length} layanan jasa)
                 </p>
               </div>
 
-              <div className="mt-3 pt-2 border-t border-indigo-200/80 flex items-center justify-between text-[11px]">
-                <span className="text-indigo-800">Biaya Satuan:</span>
-                <span className="font-mono font-bold text-indigo-950">
+              <div className="mt-3 pt-2 border-t border-indigo-200/80 flex items-center justify-between text-[11px] gap-2">
+                <span className="text-indigo-800 shrink-0">Biaya Satuan:</span>
+                <span className="font-mono font-bold text-indigo-950 truncate text-right">
                   Rp {totalServicesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / pcs
                 </span>
               </div>
             </div>
 
             {/* Card 3: Grand Total HPP Pesanan */}
-            <div className="rounded-2xl border-2 border-emerald-600 bg-emerald-50/70 p-4 shadow-sm flex flex-col justify-between ring-2 ring-emerald-500/20">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-950">
+            <div className="rounded-2xl border-2 border-emerald-600 bg-emerald-50/70 p-4 shadow-sm flex flex-col justify-between ring-2 ring-emerald-500/20 min-w-0 overflow-hidden">
+              <div className="min-w-0">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-950 truncate">
                     TOTAL HPP PESANAN ({orderQuantity.toLocaleString('id-ID')} Pcs)
                   </span>
-                  <span className="rounded-md bg-emerald-700 text-white px-2 py-0.5 text-[9px] font-black uppercase tracking-wide">
+                  <span className="rounded-md bg-emerald-700 text-white px-2 py-0.5 text-[9px] font-black uppercase tracking-wide shrink-0">
                     HPP Batch
                   </span>
                 </div>
-                <div className="mt-1 font-mono font-black text-2xl sm:text-3xl text-emerald-950">
-                  Rp {totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                <div className="mt-1 font-mono text-emerald-950 min-w-0" title={`Rp ${totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`}>
+                  <div className={getAdaptiveCurrencyClass(totalBatchCost, true)}>
+                    Rp {totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                  </div>
+                  {formatShortIndonesianCurrency(totalBatchCost) && (
+                    <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-emerald-700 text-white text-[11px] font-black shadow-2xs">
+                      {formatShortIndonesianCurrency(totalBatchCost)}
+                    </span>
+                  )}
                 </div>
                 <p className="text-[10.5px] text-emerald-900 mt-1 font-medium">
                   Total modal biaya produksi untuk menyelesaikan seluruh {orderQuantity.toLocaleString('id-ID')} Pcs pesanan
                 </p>
               </div>
 
-              <div className="mt-3 pt-2 border-t border-emerald-300 flex items-center justify-between text-[11px]">
-                <span className="text-emerald-950 font-bold">HPP Dasar per Unit:</span>
-                <span className="font-mono font-black text-emerald-950">
+              <div className="mt-3 pt-2 border-t border-emerald-300 flex items-center justify-between text-[11px] gap-2">
+                <span className="text-emerald-950 font-bold shrink-0">HPP Dasar per Unit:</span>
+                <span className="font-mono font-black text-emerald-950 truncate text-right">
                   Rp {totalCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / Pcs
                 </span>
               </div>
             </div>
 
             {/* Card 4: Total Nilai Penjualan & Laba Pesanan */}
-            <div className="rounded-2xl border border-amber-400 bg-amber-50/80 p-4 shadow-xs flex flex-col justify-between">
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900">
+            <div className="rounded-2xl border border-amber-400 bg-amber-50/80 p-4 shadow-xs flex flex-col justify-between min-w-0 overflow-hidden">
+              <div className="min-w-0">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-900 truncate">
                     Total Nilai Jual ({orderQuantity.toLocaleString('id-ID')} Pcs)
                   </span>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 shrink-0">
                     <span className="text-[10px] font-bold text-amber-950">Markup:</span>
                     <input
                       type="number"
@@ -2033,17 +2141,24 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                   </div>
                 </div>
 
-                <div className="mt-1 font-mono font-black text-2xl text-amber-950">
-                  Rp {(recommendedSellingPricePerUnit * orderQuantity).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                <div className="mt-1 font-mono text-amber-950 min-w-0" title={`Rp ${(recommendedSellingPricePerUnit * orderQuantity).toLocaleString('id-ID', { maximumFractionDigits: 0 })}`}>
+                  <div className={getAdaptiveCurrencyClass(recommendedSellingPricePerUnit * orderQuantity)}>
+                    Rp {(recommendedSellingPricePerUnit * orderQuantity).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                  </div>
+                  {formatShortIndonesianCurrency(recommendedSellingPricePerUnit * orderQuantity) && (
+                    <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200/90 text-amber-950">
+                      {formatShortIndonesianCurrency(recommendedSellingPricePerUnit * orderQuantity)}
+                    </span>
+                  )}
                 </div>
                 <p className="text-[10px] text-amber-900 mt-0.5">
                   Harga jual: Rp {recommendedSellingPricePerUnit.toLocaleString('id-ID', { maximumFractionDigits: 0 })} / Pcs (+{targetMarkupPercent}%)
                 </p>
               </div>
 
-              <div className="mt-3 pt-2 border-t border-amber-300 flex items-center justify-between text-[11px]">
-                <span className="text-amber-950 font-bold">Est. Laba Pesanan:</span>
-                <span className="font-mono font-black text-emerald-700">
+              <div className="mt-3 pt-2 border-t border-amber-300 flex items-center justify-between text-[11px] gap-2">
+                <span className="text-amber-950 font-bold shrink-0">Est. Laba Pesanan:</span>
+                <span className="font-mono font-black text-emerald-700 truncate text-right">
                   + Rp {estimatedTotalProfitBatch.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                 </span>
               </div>

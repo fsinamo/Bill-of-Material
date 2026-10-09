@@ -330,12 +330,20 @@ export const storageService = {
       if (res.ok) {
         const serverCostings: ProductCostingRecord[] = await res.json();
         if (Array.isArray(serverCostings) && serverCostings.length > 0) {
-          // If server has records, merge with local (server has priority for permanent retention)
+          // Merge server and local, prioritizing the record with newer updatedAt
           const mergedMap = new Map<string, ProductCostingRecord>();
           serverCostings.forEach((c) => mergedMap.set(c.id, c));
           local.forEach((c) => {
-            if (!mergedMap.has(c.id)) {
+            const existing = mergedMap.get(c.id);
+            if (!existing) {
               mergedMap.set(c.id, c);
+            } else {
+              const localTime = new Date(c.updatedAt || c.createdAt || 0).getTime();
+              const serverTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+              // If local is newer or has more items, prefer local
+              if (localTime >= serverTime || (c.items?.length || 0) > (existing.items?.length || 0)) {
+                mergedMap.set(c.id, c);
+              }
             }
           });
           const merged = Array.from(mergedMap.values());

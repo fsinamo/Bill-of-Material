@@ -41,6 +41,19 @@ interface CostingPageConfig {
 }
 
 // Partition costing items into distinct proportional A4 sheets
+function formatShortIndonesianCurrency(amount: number): string | null {
+  if (Math.abs(amount) >= 1_000_000_000_000) {
+    return `≈ Rp ${(amount / 1_000_000_000_000).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Triliun`;
+  }
+  if (Math.abs(amount) >= 1_000_000_000) {
+    return `≈ Rp ${(amount / 1_000_000_000).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Miliar`;
+  }
+  if (Math.abs(amount) >= 1_000_000) {
+    return `≈ Rp ${(amount / 1_000_000).toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Juta`;
+  }
+  return null;
+}
+
 function buildCostingReportPages(
   costing: ProductCostingRecord
 ): CostingPageConfig[] {
@@ -829,26 +842,40 @@ export const PrintCostingReportModal: React.FC<PrintCostingReportModalProps> = (
                   </div>
 
                   {/* Highlight Banner: Grand Total Biaya Produksi Sesuai Pesanan */}
-                  <div className="rounded-xl bg-linear-to-r from-emerald-700 to-teal-800 text-white p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                    <div>
-                      <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-100">
+                  <div className="rounded-xl bg-linear-to-r from-emerald-700 to-teal-800 text-white p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 min-w-0">
+                    <div className="min-w-0 flex-1">
+                      <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-100 block">
                         TOTAL BIAYA PRODUKSI HPP PESANAN ({costing.orderQuantity.toLocaleString('id-ID')} PCS)
                       </span>
-                      <div className="font-mono text-2xl sm:text-3xl font-black mt-0.5">
-                        Rp {totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                      <div className="font-mono font-black mt-0.5 tracking-tight min-w-0 flex flex-wrap items-baseline gap-2">
+                        <span className={totalBatchCost >= 10_000_000_000 ? 'text-xl sm:text-2xl font-black' : totalBatchCost >= 1_000_000_000 ? 'text-2xl sm:text-3xl font-black' : 'text-2xl sm:text-3xl font-black'}>
+                          Rp {totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                        </span>
+                        {formatShortIndonesianCurrency(totalBatchCost) && (
+                          <span className="px-2 py-0.5 rounded-md bg-white/20 text-white text-xs font-bold whitespace-nowrap">
+                            {formatShortIndonesianCurrency(totalBatchCost)}
+                          </span>
+                        )}
                       </div>
                       <p className="text-[10.5px] text-emerald-100 mt-0.5">
                         Total modal produksi untuk menyelesaikan {costing.orderQuantity.toLocaleString('id-ID')} pcs produk (Rp {totalCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2 })}/pcs)
                       </p>
                     </div>
 
-                    <div className="sm:text-right bg-white/15 px-3.5 py-2.5 rounded-xl border border-white/20">
+                    <div className="sm:text-right bg-white/15 px-3.5 py-2.5 rounded-xl border border-white/20 shrink-0 max-w-full">
                       <span className="text-[10px] uppercase font-bold text-emerald-100 block">
                         Total Nilai Penjualan (+{targetMarkupPercent}%):
                       </span>
-                      <span className="font-mono text-lg sm:text-xl font-black text-white block mt-0.5">
-                        Rp {(recommendedSellingPricePerUnit * costing.orderQuantity).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
-                      </span>
+                      <div className="font-mono font-black text-white mt-0.5 flex flex-wrap sm:justify-end items-baseline gap-1.5">
+                        <span className={(recommendedSellingPricePerUnit * costing.orderQuantity) >= 10_000_000_000 ? 'text-base sm:text-lg font-black' : 'text-lg sm:text-xl font-black'}>
+                          Rp {(recommendedSellingPricePerUnit * costing.orderQuantity).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                        </span>
+                        {formatShortIndonesianCurrency(recommendedSellingPricePerUnit * costing.orderQuantity) && (
+                          <span className="text-[10px] text-emerald-100 font-semibold block">
+                            ({formatShortIndonesianCurrency(recommendedSellingPricePerUnit * costing.orderQuantity)})
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[10px] text-emerald-100 block mt-0.5">
                         Estimasi Total Laba: +Rp {(((recommendedSellingPricePerUnit * costing.orderQuantity) - totalBatchCost)).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                       </span>

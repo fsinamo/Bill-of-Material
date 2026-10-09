@@ -806,6 +806,21 @@ export const sheetsSyncService = {
       const result = parseAppsScriptResponse(rawText, cleanUrl);
 
       if (result.status === 'success' && result.data) {
+        // Ensure costings items are properly normalized from JSON column if needed
+        if (Array.isArray(result.data.costings)) {
+          result.data.costings = result.data.costings.map((c: any) => {
+            if ((!c.items || !Array.isArray(c.items) || c.items.length === 0) && c['Rincian Item (JSON)']) {
+              try {
+                const parsed = typeof c['Rincian Item (JSON)'] === 'string' ? JSON.parse(c['Rincian Item (JSON)']) : c['Rincian Item (JSON)'];
+                if (parsed && Array.isArray(parsed.items)) {
+                  return { ...c, ...parsed };
+                }
+              } catch {}
+            }
+            return c;
+          });
+        }
+
         storageService.addSyncLog({
           action: 'Tarik Data dari Google Sheets',
           status: 'success',
