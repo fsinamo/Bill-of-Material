@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   X,
   Printer,
@@ -25,6 +25,7 @@ interface PrintCostingReportModalProps {
   companyProfile: CompanyProfile;
   onClose: () => void;
   onUpdateCompanyProfile?: (profile: CompanyProfile) => void;
+  autoAction?: 'pdf' | 'jpg' | 'png' | null;
 }
 
 interface CostingPageConfig {
@@ -114,6 +115,7 @@ export const PrintCostingReportModal: React.FC<PrintCostingReportModalProps> = (
   companyProfile,
   onClose,
   onUpdateCompanyProfile,
+  autoAction,
 }) => {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isExportingJpg, setIsExportingJpg] = useState(false);
@@ -372,6 +374,21 @@ export const PrintCostingReportModal: React.FC<PrintCostingReportModalProps> = (
   const handlePrint = () => {
     window.print();
   };
+
+  // Automatically trigger PDF/JPEG/PNG export if requested by parent
+  useEffect(() => {
+    if (!autoAction) return;
+    const timer = setTimeout(() => {
+      if (autoAction === 'pdf') {
+        handleExportPdf();
+      } else if (autoAction === 'jpg') {
+        handleExportJpg();
+      } else if (autoAction === 'png') {
+        handleExportPng();
+      }
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [autoAction]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
@@ -650,7 +667,9 @@ export const PrintCostingReportModal: React.FC<PrintCostingReportModalProps> = (
                         <th className="py-2 px-2.5 font-bold text-right">Harga Satuan</th>
                         <th className="py-2 px-2.5 font-bold text-center">Qty / Pcs</th>
                         <th className="py-2 px-2.5 font-bold text-right">Biaya / Pcs</th>
-                        <th className="py-2 px-2.5 font-bold text-right">Total Batch</th>
+                        <th className="py-2 px-2.5 font-bold text-right bg-amber-100/70 text-amber-950">
+                          Total Biaya Pesanan ({costing.orderQuantity.toLocaleString('id-ID')} Pcs)
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200">
@@ -693,24 +712,27 @@ export const PrintCostingReportModal: React.FC<PrintCostingReportModalProps> = (
                           <td className="py-2 px-2.5 font-mono text-center text-slate-800">
                             {item.usageQtyPerProduct}
                           </td>
-                          <td className="py-2 px-2.5 font-mono font-bold text-right text-slate-900">
+                          <td className="py-2 px-2.5 font-mono text-right text-slate-600">
                             Rp {item.totalCostPerProduct.toLocaleString('id-ID', { maximumFractionDigits: 2 })}
                           </td>
-                          <td className="py-2 px-2.5 font-mono text-right text-slate-700">
-                            Rp {item.totalCostBatch.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                          <td className="py-2 px-2.5 font-mono font-bold text-right text-amber-950 bg-amber-50/40">
+                            <div>Rp {item.totalCostBatch.toLocaleString('id-ID', { maximumFractionDigits: 0 })}</div>
+                            <div className="text-[9px] text-slate-500 font-normal">
+                              ({item.usageQtyPerProduct * costing.orderQuantity} buah pemakaian)
+                            </div>
                           </td>
                         </tr>
                       ))}
                       {/* Subtotal on Page 1 if only accessories */}
                       {page.isFirstPage && (
                         <tr className="bg-slate-50 font-bold border-t-2 border-slate-300">
-                          <td colSpan={5} className="py-2 px-2.5 text-slate-800 text-right">
-                            Subtotal Biaya Accessories:
+                          <td colSpan={5} className="py-2 px-2.5 text-slate-800 text-right uppercase">
+                            Total Biaya Accessories ({costing.orderQuantity.toLocaleString('id-ID')} Pcs):
                           </td>
-                          <td className="py-2 px-2.5 font-mono text-right text-slate-900 font-black">
-                            Rp {totalAccessoriesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          <td className="py-2 px-2.5 font-mono text-right text-slate-600 text-[10px]">
+                            Rp {totalAccessoriesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / pcs
                           </td>
-                          <td className="py-2 px-2.5 font-mono text-right text-amber-900 font-bold">
+                          <td className="py-2 px-2.5 font-mono text-right text-amber-950 font-black text-xs bg-amber-100/60">
                             Rp {costing.totalAccessoriesBatchCost?.toLocaleString('id-ID', { maximumFractionDigits: 0 }) || (totalAccessoriesCostPerUnit * costing.orderQuantity).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                           </td>
                         </tr>
@@ -746,8 +768,10 @@ export const PrintCostingReportModal: React.FC<PrintCostingReportModalProps> = (
                         <th className="py-2 px-2.5 font-bold">Keterangan Pekerjaan</th>
                         <th className="py-2 px-2.5 font-bold text-right">Tarif Satuan</th>
                         <th className="py-2 px-2.5 font-bold text-center">Jumlah / Pcs</th>
-                        <th className="py-2 px-2.5 font-bold text-right">Biaya Jasa / Pcs</th>
-                        <th className="py-2 px-2.5 font-bold text-right">Total Batch</th>
+                        <th className="py-2 px-2.5 font-bold text-right">Biaya / Pcs</th>
+                        <th className="py-2 px-2.5 font-bold text-right bg-indigo-100/70 text-indigo-950">
+                          Total Biaya Jasa Pesanan ({costing.orderQuantity.toLocaleString('id-ID')} Pcs)
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-indigo-100">
@@ -764,22 +788,25 @@ export const PrintCostingReportModal: React.FC<PrintCostingReportModalProps> = (
                           <td className="py-2 px-2.5 font-mono text-center text-slate-800">
                             {item.usageQtyPerProduct}
                           </td>
-                          <td className="py-2 px-2.5 font-mono font-bold text-right text-indigo-950">
+                          <td className="py-2 px-2.5 font-mono text-right text-slate-600">
                             Rp {item.totalCostPerProduct.toLocaleString('id-ID', { maximumFractionDigits: 1 })}
                           </td>
-                          <td className="py-2 px-2.5 font-mono text-right text-slate-700">
-                            Rp {item.totalCostBatch.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                          <td className="py-2 px-2.5 font-mono font-bold text-right text-indigo-950 bg-indigo-50/40">
+                            <div>Rp {item.totalCostBatch.toLocaleString('id-ID', { maximumFractionDigits: 0 })}</div>
+                            <div className="text-[9px] text-slate-500 font-normal">
+                              ({item.usageQtyPerProduct * costing.orderQuantity} kali pengerjaan)
+                            </div>
                           </td>
                         </tr>
                       ))}
                       <tr className="bg-indigo-50/90 font-bold border-t-2 border-indigo-200">
-                        <td colSpan={5} className="py-2 px-2.5 text-indigo-950 text-right">
-                          Subtotal Biaya Jasa Pengerjaan:
+                        <td colSpan={5} className="py-2 px-2.5 text-indigo-950 text-right uppercase">
+                          Total Biaya Jasa Pesanan ({costing.orderQuantity.toLocaleString('id-ID')} Pcs):
                         </td>
-                        <td className="py-2 px-2.5 font-mono text-right text-indigo-950 font-black">
-                          Rp {totalServicesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        <td className="py-2 px-2.5 font-mono text-right text-slate-600 text-[10px]">
+                          Rp {totalServicesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / pcs
                         </td>
-                        <td className="py-2 px-2.5 font-mono text-right text-indigo-900 font-bold">
+                        <td className="py-2 px-2.5 font-mono text-right text-indigo-950 font-black text-xs bg-indigo-100/60">
                           Rp {(totalServicesCostPerUnit * costing.orderQuantity).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                         </td>
                       </tr>
@@ -790,60 +817,91 @@ export const PrintCostingReportModal: React.FC<PrintCostingReportModalProps> = (
 
               {/* 5. Rekapitulasi Summary Box (Last Page Only) */}
               {page.showSummaryBox && (
-                <div className="mt-6 rounded-2xl bg-amber-50/90 border-2 border-amber-300 p-5 shadow-xs">
-                  <div className="flex items-center justify-between border-b border-amber-200 pb-2.5 mb-3">
+                <div className="mt-6 rounded-2xl bg-amber-50/90 border-2 border-amber-300 p-5 shadow-xs space-y-3">
+                  <div className="flex items-center justify-between border-b border-amber-200 pb-2.5">
                     <h3 className="text-xs font-black uppercase text-amber-950 tracking-wider flex items-center gap-1.5">
                       <Coins className="w-4 h-4 text-amber-700" />
-                      <span>Rekapitulasi HPP & Rekomendasi Harga Jual</span>
+                      <span>Rekapitulasi HPP Sesuai Jumlah Pesanan ({costing.orderQuantity.toLocaleString('id-ID')} Pcs)</span>
                     </h3>
                     <span className="rounded-full bg-amber-200 px-2.5 py-0.5 text-[10px] font-bold text-amber-900">
                       Markup Margin {targetMarkupPercent}%
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
+                  {/* Highlight Banner: Grand Total Biaya Produksi Sesuai Pesanan */}
+                  <div className="rounded-xl bg-linear-to-r from-emerald-700 to-teal-800 text-white p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                     <div>
-                      <span className="text-slate-600 block text-[10.5px]">Subtotal Accessories / Pcs</span>
-                      <strong className="font-mono text-slate-900 text-sm">
-                        Rp {totalAccessoriesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </strong>
+                      <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-100">
+                        TOTAL BIAYA PRODUKSI HPP PESANAN ({costing.orderQuantity.toLocaleString('id-ID')} PCS)
+                      </span>
+                      <div className="font-mono text-2xl sm:text-3xl font-black mt-0.5">
+                        Rp {totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                      </div>
+                      <p className="text-[10.5px] text-emerald-100 mt-0.5">
+                        Total modal produksi untuk menyelesaikan {costing.orderQuantity.toLocaleString('id-ID')} pcs produk (Rp {totalCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2 })}/pcs)
+                      </p>
                     </div>
 
-                    <div>
-                      <span className="text-slate-600 block text-[10.5px]">Subtotal Ongkos Jasa / Pcs</span>
-                      <strong className="font-mono text-indigo-950 text-sm">
-                        Rp {totalServicesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </strong>
-                    </div>
-
-                    <div className="bg-white/80 p-2.5 rounded-xl border border-amber-300 sm:row-span-2">
-                      <span className="text-amber-900 block text-[10.5px] font-bold">
-                        Rekomendasi Harga Jual (+{targetMarkupPercent}%)
+                    <div className="sm:text-right bg-white/15 px-3.5 py-2.5 rounded-xl border border-white/20">
+                      <span className="text-[10px] uppercase font-bold text-emerald-100 block">
+                        Total Nilai Penjualan (+{targetMarkupPercent}%):
                       </span>
-                      <strong className="font-mono text-amber-950 text-lg sm:text-xl font-black block mt-0.5">
-                        Rp {recommendedSellingPricePerUnit.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
-                      </strong>
-                      <span className="text-[10px] text-slate-500 block mt-0.5">
-                        Estimasi Laba: Rp {(recommendedSellingPricePerUnit - totalCostPerUnit).toLocaleString('id-ID', { maximumFractionDigits: 0 })} / pcs
+                      <span className="font-mono text-lg sm:text-xl font-black text-white block mt-0.5">
+                        Rp {(recommendedSellingPricePerUnit * costing.orderQuantity).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                      </span>
+                      <span className="text-[10px] text-emerald-100 block mt-0.5">
+                        Estimasi Total Laba: +Rp {(((recommendedSellingPricePerUnit * costing.orderQuantity) - totalBatchCost)).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                       </span>
                     </div>
+                  </div>
 
-                    <div className="pt-2 border-t border-amber-200">
-                      <span className="text-slate-700 block text-[11px] font-bold">
-                        GRAND TOTAL HPP / Pcs
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-1">
+                    <div className="bg-white/80 p-2.5 rounded-xl border border-amber-200">
+                      <span className="text-slate-600 block text-[10px] uppercase font-semibold">
+                        Total Accessories ({costing.orderQuantity} Pcs)
                       </span>
-                      <strong className="font-mono text-emerald-950 text-base font-black">
+                      <strong className="font-mono text-amber-950 text-sm font-black block mt-0.5">
+                        Rp {(costing.totalAccessoriesBatchCost ?? (totalAccessoriesCostPerUnit * costing.orderQuantity)).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                      </strong>
+                      <span className="text-[9.5px] text-slate-500 block">
+                        Rp {totalAccessoriesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2 })}/pcs
+                      </span>
+                    </div>
+
+                    <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-200">
+                      <span className="text-indigo-800 block text-[10px] uppercase font-semibold">
+                        Total Ongkos Jasa ({costing.orderQuantity} Pcs)
+                      </span>
+                      <strong className="font-mono text-indigo-950 text-sm font-black block mt-0.5">
+                        Rp {(costing.totalServicesBatchCost ?? (totalServicesCostPerUnit * costing.orderQuantity)).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                      </strong>
+                      <span className="text-[9.5px] text-indigo-700 block">
+                        Rp {totalServicesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2 })}/pcs
+                      </span>
+                    </div>
+
+                    <div className="bg-white/80 p-2.5 rounded-xl border border-emerald-200">
+                      <span className="text-emerald-800 block text-[10px] uppercase font-semibold">
+                        HPP Satuan (Per 1 Pcs)
+                      </span>
+                      <strong className="font-mono text-emerald-950 text-sm font-black block mt-0.5">
                         Rp {totalCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </strong>
+                      <span className="text-[9.5px] text-emerald-700 block">
+                        Acuan biaya dasar per unit
+                      </span>
                     </div>
 
-                    <div className="pt-2 border-t border-amber-200">
-                      <span className="text-slate-700 block text-[11px] font-bold">
-                        Total Biaya Batch ({costing.orderQuantity} Pcs)
+                    <div className="bg-white/80 p-2.5 rounded-xl border border-amber-300">
+                      <span className="text-amber-900 block text-[10px] uppercase font-bold">
+                        Rekomendasi Jual / Pcs
                       </span>
-                      <strong className="font-mono text-emerald-950 text-base font-black">
-                        Rp {totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
+                      <strong className="font-mono text-amber-950 text-sm font-black block mt-0.5">
+                        Rp {recommendedSellingPricePerUnit.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                       </strong>
+                      <span className="text-[9.5px] text-slate-500 block">
+                        Laba Rp {(recommendedSellingPricePerUnit - totalCostPerUnit).toLocaleString('id-ID', { maximumFractionDigits: 0 })}/pcs
+                      </span>
                     </div>
                   </div>
                 </div>
