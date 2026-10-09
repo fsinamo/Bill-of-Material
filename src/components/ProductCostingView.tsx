@@ -7,12 +7,14 @@ import {
   ProductCostingRecord,
   AccessoryCategory,
   GoogleSheetsConfig,
+  CalculationRecord,
 } from '../types';
 import { storageService } from '../services/storageService';
 import { sheetsSyncService } from '../services/sheetsSyncService';
 import { companyProfile } from '../data/defaultData';
 import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
+import html2canvas from 'html2canvas-pro';
+import { PrintCostingReportModal } from './PrintCostingReportModal';
 import {
   Coins,
   Package,
@@ -47,7 +49,9 @@ interface ProductCostingViewProps {
   products: Product[];
   accessories: Accessory[];
   rawMaterials: RawMaterial[];
+  calculations?: CalculationRecord[];
   initialProductId?: string;
+  initialCalculationId?: string;
   onNavigateToConsumption?: () => void;
   sheetsConfig?: GoogleSheetsConfig;
   onCostingsUpdated?: () => void;
@@ -57,7 +61,9 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   products,
   accessories,
   rawMaterials,
+  calculations: propCalculations,
   initialProductId,
+  initialCalculationId,
   onNavigateToConsumption,
   sheetsConfig: propSheetsConfig,
   onCostingsUpdated,
@@ -132,6 +138,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
 
   // Format selection modal & export loading states
   const [isFormatModalOpen, setIsFormatModalOpen] = useState(false);
+  const [isPrintCostingModalOpen, setIsPrintCostingModalOpen] = useState(false);
   const [isExportingJpg, setIsExportingJpg] = useState(false);
   const [isExportingPng, setIsExportingPng] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
@@ -160,47 +167,156 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   const [customServiceQty, setCustomServiceQty] = useState<number>(1);
   const [customServiceUnit, setCustomServiceUnit] = useState('pcs');
 
-  // Helper to compute accessory or service price from Master Accessories & Raw Materials
-  const getAccessoryPriceInfo = (acc: Accessory) => {
-    if (acc.category === 'ready_made' || acc.category === 'service') {
-      const price = acc.purchasePrice || 0;
-      const isService = acc.category === 'service';
-      return {
-        unitPrice: price,
-        sourceLabel: isService ? 'Tarif Jasa Pengerjaan' : 'Beli Jadi (Langsung)',
-        detailText: isService ? `Tarif Rp ${price.toLocaleString('id-ID')} / ${acc.unit}` : `Rp ${price.toLocaleString('id-ID')} / ${acc.unit}`,
-        rawMaterialName: '-',
-        rawMaterialUnitPrice: 0,
-        yieldPerUnit: 1,
-      };
-    }
+  // Integrasi Modul Consumption (BOM):
+  // Menghubungkan kalkulasi konsumsi bahan baku dengan modul Product Costing
+  const allCalculations = useMemo(() => {
+    return propCalculations && propCalculations.length > 0
+      ? propCalculations
+      : storageService.getCalculations();
+  }, [propCalculations]);
 
-    // raw_material_based
-    const mat = rawMaterials.find((m) => m.id === acc.defaultRawMaterialId);
-    const matPrice = mat?.unitPrice || 0;
-    const yieldVal = acc.defaultYieldPerUnit || 1;
-    const price = yieldVal > 0 ? matPrice / yieldVal : 0;
-
-    return {
-      unitPrice: price,
-      sourceLabel: `Olah ${mat?.name || 'Bahan'}`,
-      detailText: `Rp ${matPrice.toLocaleString('id-ID')} ÷ ${yieldVal} yield`,
-      rawMaterialName: mat?.name,
-      rawMaterialUnitPrice: matPrice,
-      yieldPerUnit: yieldVal,
-    };
-  };
+  const [selectedCalculationId, setSelectedCalculationId] = useState<string>(
+    initialCalculationId || ''
+  );
 
   // Selected product object
   const currentProduct = useMemo(() => {
     return products.find((p) => p.id === selectedProductId) || products[0];
   }, [products, selectedProductId]);
 
-  // Load product accessories into costing table when selected product changes
+  // Perhitungan yang cocok dengan produk aktif
+  const matchingCalculations = useMemo(() => {
+    return allCalculations.filter(
+      (c) =>
+        c.productId === selectedProductId ||
+        c.productName.trim().toLowerCase() === currentProduct?.name.trim().toLowerCase()
+    );
+  }, [allCalculations, selectedProductId, currentProduct]);
+
+  // Acuan perhitungan konsumsi aktif (BOM)
+  const activeReferencedCalc = useMemo(() => {
+    if (selectedCalculationId) {
+      const match = allCalculations.find((c) => c.id === selectedCalculationId);
+      if (match) return match;
+    }
+    // Jika ada perhitungan yang cocok untuk produk ini, otomatis pakai yang terbaru
+    return matchingCalculations[0] || null;
+  }, [allCalculations, selectedCalculationId, matchingCalculations]);
+
+  // Update selectedCalculationId saat produk berubah jika belum dipilih manual
+  useEffect(() => {
+    if (initialCalculationId) {
+      setSelectedCalculationId(initialCalculationId);
+    } else if (matchingCalculations.length > 0) {
+      setSelectedCalculationId(matchingCalculations[0].id);
+    } else {
+      setSelectedCalculationId('');
+    }
+  }, [selectedProductId, matchingCalculations, initialCalculationId]);
+
+  // Helper to compute accessory or service price from Consumption Module (BOM) OR Master Accessories
+  const getAccessoryPriceInfo = (acc: Accessory) => {
+    // 1. Cek apakah ada rincian hasil perhitungan dari Modul Consumption (BOM)
+    const calcDetail = activeReferencedCalc?.details?.find(
+      (d) =>
+        d.accessoryId === acc.id ||
+        d.accessoryName.trim().toLowerCase() === acc.name.trim().toLowerCase()
+    );
+
+    if (calcDetail) {
+      const mat =
+        rawMaterials.find((m) => m.id === calcDetail.rawMaterialId) ||
+        rawMaterials.find(
+          (m) =>
+            m.name.trim().toLowerCase() ===
+            calcDetail.rawMaterialName.trim().toLowerCase()
+        ) ||
+        rawMaterials.find((m) => m.id === acc.defaultRawMaterialId);
+
+      const matPrice = mat?.unitPrice ?? 0;
+      const yieldVal = calcDetail.yieldPerUnit || acc.defaultYieldPerUnit || 1;
+      const allowance = calcDetail.allowancePercent || 0;
+      const basePrice = yieldVal > 0 && matPrice > 0 ? matPrice / yieldVal : 0;
+      const priceWithAllowance =
+        basePrice > 0
+          ? Number((basePrice * (1 + allowance / 100)).toFixed(2))
+          : (acc.purchasePrice || 0);
+
+      const materialName = calcDetail.rawMaterialName || mat?.name || 'Bahan Baku';
+
+      return {
+        unitPrice: priceWithAllowance,
+        sourceLabel: `BOM: ${materialName}`,
+        detailText:
+          matPrice > 0
+            ? `${materialName}: Rp ${matPrice.toLocaleString('id-ID')} ÷ ${yieldVal} yield${allowance > 0 ? ` (+${allowance}% susut)` : ''} (Modul Konsumsi ${activeReferencedCalc.calculationNumber})`
+            : `Hasil BOM ${activeReferencedCalc.calculationNumber} (Yield: ${yieldVal} pcs)`,
+        rawMaterialName: materialName,
+        rawMaterialUnitPrice: matPrice,
+        yieldPerUnit: yieldVal,
+        materialUsagePerPcs:
+          calcDetail.materialUsagePerPcs ||
+          (yieldVal > 0 ? Number((1 / yieldVal).toFixed(6)) : acc.materialUsagePerPcs),
+        rawMaterialSize: calcDetail.rawMaterialSize || acc.rawMaterialSize,
+        pieceCuttingSize: calcDetail.pieceCuttingSize || acc.pieceCuttingSize,
+        divisionFormula: calcDetail.divisionFormula || acc.divisionFormula,
+        differentSizeNotes: calcDetail.differentSizeNotes || acc.differentSizeNotes,
+        fromConsumption: true,
+      };
+    }
+
+    // 2. Jika tidak ada di perhitungan konsumsi, gunakan Master Accessories
+    if (acc.category === 'ready_made' || acc.category === 'service') {
+      const price = acc.purchasePrice || 0;
+      const isService = acc.category === 'service';
+      return {
+        unitPrice: price,
+        sourceLabel: isService ? 'Tarif Jasa Pengerjaan' : 'Beli Jadi (Langsung)',
+        detailText: isService
+          ? `Tarif Rp ${price.toLocaleString('id-ID')} / ${acc.unit}`
+          : `Rp ${price.toLocaleString('id-ID')} / ${acc.unit}`,
+        rawMaterialName: '-',
+        rawMaterialUnitPrice: 0,
+        yieldPerUnit: 1,
+        materialUsagePerPcs: 1,
+        fromConsumption: false,
+      };
+    }
+
+    // 3. raw_material_based dari Master
+    const mat = rawMaterials.find((m) => m.id === acc.defaultRawMaterialId);
+    const matPrice = mat?.unitPrice || 0;
+    const yieldVal = acc.defaultYieldPerUnit || 1;
+    const price = yieldVal > 0 ? Number((matPrice / yieldVal).toFixed(2)) : 0;
+
+    return {
+      unitPrice: price > 0 ? price : (acc.purchasePrice || 0),
+      sourceLabel: `Olah ${mat?.name || 'Bahan'} (Master)`,
+      detailText:
+        matPrice > 0
+          ? `Rp ${matPrice.toLocaleString('id-ID')} ÷ ${yieldVal} yield`
+          : 'Belum diisi harga bahan baku',
+      rawMaterialName: mat?.name || '-',
+      rawMaterialUnitPrice: matPrice,
+      yieldPerUnit: yieldVal,
+      materialUsagePerPcs:
+        yieldVal > 0 ? Number((1 / yieldVal).toFixed(6)) : acc.materialUsagePerPcs,
+      fromConsumption: false,
+    };
+  };
+
+  // Load product accessories into costing table when selected product or referenced calc changes
   useEffect(() => {
     if (!currentProduct) return;
 
-    setTitle(`Costing HPP ${currentProduct.name} (Batch ${orderQuantity.toLocaleString('id-ID')} Pcs)`);
+    // Sinkronkan order quantity dari perhitungan jika ada
+    if (activeReferencedCalc?.orderQuantity && activeReferencedCalc.orderQuantity > 0) {
+      setOrderQuantity(activeReferencedCalc.orderQuantity);
+    }
+
+    setTitle(
+      `Costing HPP ${currentProduct.name} (Batch ${(activeReferencedCalc?.orderQuantity || orderQuantity).toLocaleString('id-ID')} Pcs)`
+    );
 
     const items: ProductCostingItem[] = currentProduct.accessories.map((rel) => {
       const acc = accessories.find((a) => a.id === rel.accessoryId) || {
@@ -226,11 +342,11 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
         rawMaterialName: priceInfo.rawMaterialName,
         rawMaterialUnitPrice: priceInfo.rawMaterialUnitPrice,
         yieldPerUnit: priceInfo.yieldPerUnit,
-        materialUsagePerPcs: priceInfo.yieldPerUnit ? Number((1 / priceInfo.yieldPerUnit).toFixed(6)) : acc.materialUsagePerPcs,
-        rawMaterialSize: acc.rawMaterialSize,
-        pieceCuttingSize: acc.pieceCuttingSize,
-        divisionFormula: acc.divisionFormula,
-        differentSizeNotes: acc.differentSizeNotes,
+        materialUsagePerPcs: priceInfo.materialUsagePerPcs || (priceInfo.yieldPerUnit ? Number((1 / priceInfo.yieldPerUnit).toFixed(6)) : acc.materialUsagePerPcs),
+        rawMaterialSize: priceInfo.rawMaterialSize || acc.rawMaterialSize,
+        pieceCuttingSize: priceInfo.pieceCuttingSize || acc.pieceCuttingSize,
+        divisionFormula: priceInfo.divisionFormula || acc.divisionFormula,
+        differentSizeNotes: priceInfo.differentSizeNotes || acc.differentSizeNotes,
         unitPrice: priceInfo.unitPrice,
         usageQtyPerProduct,
         totalUsageQty,
@@ -241,7 +357,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     });
 
     setCostingItems(items);
-  }, [selectedProductId, currentProduct, accessories, rawMaterials]);
+  }, [selectedProductId, currentProduct, activeReferencedCalc, accessories, rawMaterials]);
 
   // Recalculate batch costs when orderQuantity or costing items change
   const updatedItems = useMemo(() => {
@@ -840,101 +956,74 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     document.body.removeChild(link);
   };
 
-  // Capture canvas for PDF, JPEG, and PNG downloads (100% identical format & quality)
-  const captureCostingCanvas = async (): Promise<HTMLCanvasElement> => {
-    const el = document.getElementById("product-costing-printable-sheet");
-    if (!el) throw new Error("Elemen lembar costing tidak ditemukan");
-    return await html2canvas(el, {
-      scale: 2.2, // Resolusi tinggi tajam untuk cetak A4 dan ekspor gambar
-      useCORS: true,
-      logging: false,
-      backgroundColor: "#ffffff",
-      windowWidth: 1200,
-      scrollX: 0,
-      scrollY: 0,
-    });
+  // Dokumen ProductCostingRecord aktif untuk preview, simpan, dan ekspor
+  const currentCostingRecord: ProductCostingRecord = useMemo(() => {
+    return {
+      id: activeCostingId || `cst-${Date.now()}`,
+      costingNumber,
+      title,
+      companyName,
+      productId: selectedProductId,
+      productName: currentProduct?.name || 'Produk',
+      productCode: currentProduct?.code || 'PRD-001',
+      orderQuantity,
+      items: updatedItems,
+      totalCostPerUnit,
+      totalBatchCost,
+      totalAccessoriesCostPerUnit,
+      totalServicesCostPerUnit,
+      totalAccessoriesBatchCost,
+      totalServicesBatchCost,
+      targetMarkupPercent,
+      targetSellingPricePerUnit: recommendedSellingPricePerUnit,
+      calculationDate,
+      notes,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }, [
+    activeCostingId,
+    costingNumber,
+    title,
+    companyName,
+    selectedProductId,
+    currentProduct,
+    orderQuantity,
+    updatedItems,
+    totalCostPerUnit,
+    totalBatchCost,
+    totalAccessoriesCostPerUnit,
+    totalServicesCostPerUnit,
+    totalAccessoriesBatchCost,
+    totalServicesBatchCost,
+    targetMarkupPercent,
+    recommendedSellingPricePerUnit,
+    calculationDate,
+    notes,
+  ]);
+
+  // Buka Modal Cetak & Ekspor Multi-Halaman Proporsional
+  const handleOpenPrintModal = () => {
+    setIsFormatModalOpen(false);
+    setIsPrintCostingModalOpen(true);
   };
 
-  // Export to PDF (A4 format 1:1 identik dengan Image)
-  const handleExportPdf = async () => {
-    setIsExportingPdf(true);
+  // Export to PDF
+  const handleExportPdf = () => {
     setIsFormatModalOpen(false);
-    setNotice("Menyiapkan berkas PDF format A4 kualitas tinggi (identik dengan gambar)...");
-    try {
-      const canvas = await captureCostingCanvas();
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-
-      // Format Standar A4: 210 x 297 mm
-      const imgData = canvas.toDataURL("image/jpeg", 0.98);
-      pdf.addImage(imgData, "JPEG", 0, 0, 210, 297);
-
-      const safeNumber = costingNumber.replace(/[^a-zA-Z0-9-_]/g, "_");
-      pdf.save(`Product_Costing_${safeNumber}.pdf`);
-      setNotice(`Berhasil mengunduh PDF A4: Product_Costing_${safeNumber}.pdf`);
-      setTimeout(() => setNotice(null), 3500);
-    } catch (err) {
-      console.error("Gagal generate PDF:", err);
-      setNotice("Gagal membuat berkas PDF.");
-      setTimeout(() => setNotice(null), 3500);
-    } finally {
-      setIsExportingPdf(false);
-    }
+    setIsPrintCostingModalOpen(true);
   };
 
   // Export as high-resolution JPEG (.jpg)
-  const handleExportJpg = async () => {
-    setIsExportingJpg(true);
+  const handleExportJpg = () => {
     setIsFormatModalOpen(false);
-    setNotice('Menyiapkan berkas JPEG resolusi tinggi...');
-    try {
-      const canvas = await captureCostingCanvas();
-      const imgData = canvas.toDataURL('image/jpeg', 0.95);
-      const link = document.createElement('a');
-      const safeNumber = costingNumber.replace(/[^a-zA-Z0-9-_]/g, '_');
-      link.href = imgData;
-      link.download = `Product_Costing_${safeNumber}.jpg`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setNotice(`Berhasil mengunduh gambar JPEG: Product_Costing_${safeNumber}.jpg`);
-      setTimeout(() => setNotice(null), 3500);
-    } catch (err) {
-      console.error('Gagal generate JPEG:', err);
-      setNotice('Gagal membuat gambar JPEG.');
-      setTimeout(() => setNotice(null), 3500);
-    } finally {
-      setIsExportingJpg(false);
-    }
+    setIsPrintCostingModalOpen(true);
   };
 
   // Export as lossless PNG (.png)
-  const handleExportPng = async () => {
-    setIsExportingPng(true);
+  const handleExportPng = () => {
     setIsFormatModalOpen(false);
-    setNotice('Menyiapkan berkas PNG resolusi tinggi tanpa kompresi...');
-    try {
-      const canvas = await captureCostingCanvas();
-      const imgData = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      const safeNumber = costingNumber.replace(/[^a-zA-Z0-9-_]/g, '_');
-      link.href = imgData;
-      link.download = `Product_Costing_${safeNumber}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      setNotice(`Berhasil mengunduh gambar PNG: Product_Costing_${safeNumber}.png`);
-      setTimeout(() => setNotice(null), 3500);
-    } catch (err) {
-      console.error('Gagal generate PNG:', err);
-      setNotice('Gagal membuat gambar PNG.');
-      setTimeout(() => setNotice(null), 3500);
-    } finally {
-      setIsExportingPng(false);
-    }
+    setIsPrintCostingModalOpen(true);
   };
 
   // Master lists filtered
@@ -1321,6 +1410,89 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                 />
               </div>
             </div>
+          </div>
+
+          {/* Kartu Acuan Modul Consumption (BOM) & Harga Aksesoris */}
+          <div className="rounded-2xl border-2 border-emerald-500/40 bg-linear-to-r from-emerald-50/80 via-teal-50/40 to-white p-4.5 shadow-xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start sm:items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white shrink-0 font-bold shadow-xs">
+                  <Calculator className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className="text-xs font-bold text-slate-900 uppercase">
+                      Acuan Perhitungan Modul Consumption (BOM)
+                    </h4>
+                    {activeReferencedCalc ? (
+                      <span className="rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 text-[10px] font-bold flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        <span>Terhubung: {activeReferencedCalc.calculationNumber}</span>
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-slate-100 text-slate-600 border border-slate-300 px-2 py-0.5 text-[10px] font-medium">
+                        Menggunakan Standar Master
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    Harga satuan accessories olahan bahan baku otomatis dikalkulasi dari harga bahan baku ÷ yield/lembar (+ susut) sesuai hasil modul consumption.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                {onNavigateToConsumption && (
+                  <button
+                    type="button"
+                    onClick={onNavigateToConsumption}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-emerald-600 bg-white hover:bg-emerald-50 text-emerald-800 text-xs font-bold transition shadow-2xs"
+                  >
+                    <RotateCcw className="w-3 h-3 text-emerald-600" />
+                    <span>Buka Modul Consumption</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Selector Dokumen Perhitungan Konsumsi */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 pt-2 border-t border-emerald-200/60 items-center text-xs">
+              <div className="sm:col-span-4 font-semibold text-slate-700">
+                Pilih Dokumen Perhitungan Konsumsi:
+              </div>
+              <div className="sm:col-span-8">
+                <select
+                  value={selectedCalculationId}
+                  onChange={(e) => setSelectedCalculationId(e.target.value)}
+                  className="w-full rounded-xl border border-emerald-300 bg-white px-3 py-1.5 font-bold text-slate-900 outline-hidden focus:border-emerald-600 text-xs shadow-2xs"
+                >
+                  <option value="">
+                    -- Otomatis (Gunakan Hasil Konsumsi Terbaru untuk {currentProduct?.name}) --
+                  </option>
+                  {allCalculations.map((calc) => (
+                    <option key={calc.id} value={calc.id}>
+                      {calc.calculationNumber} — {calc.title || calc.productName} ({calc.orderQuantity.toLocaleString('id-ID')} Pcs - {calc.calculationDate})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {activeReferencedCalc && (
+              <div className="bg-white/90 rounded-xl p-2.5 border border-emerald-200 text-[11px] text-slate-700 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-emerald-950">
+                    Rincian BOM Terpilih:
+                  </span>
+                  <span>
+                    {activeReferencedCalc.details?.length || 0} Komponen accessories dihitung dengan bahan baku dan yield spesifik.
+                  </span>
+                </div>
+                <span className="font-mono text-emerald-900 font-bold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200/60 text-[10px]">
+                  Batch: {activeReferencedCalc.orderQuantity.toLocaleString('id-ID')} Pcs • Ref PO: {activeReferencedCalc.customerOrPoRef || '-'}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* TABEL 1: Rincian Komponen Accessories (Beli Jadi & Olahan Bahan Baku) */}
@@ -1862,9 +2034,9 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
               {/* Tombol Pilihan Format Modal */}
               <button
                 id="btn-choose-costing-format"
-                onClick={() => setIsFormatModalOpen(true)}
+                onClick={() => setIsPrintCostingModalOpen(true)}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 px-3.5 py-2.5 text-xs font-bold text-white transition shadow-sm"
-                title="Buka pilihan format unduh dokumen costing (PDF, JPEG, PNG, CSV)"
+                title="Buka preview & pilihan format cetak dokumen costing (PDF, JPEG, PNG)"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Pilihan Format (PDF / JPEG / PNG)</span>
@@ -2588,6 +2760,15 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Modal Dialog Cetak & Ekspor Laporan Costing Multi-Halaman Proporsional */}
+      {isPrintCostingModalOpen && (
+        <PrintCostingReportModal
+          costing={currentCostingRecord}
+          companyProfile={companyProfile}
+          onClose={() => setIsPrintCostingModalOpen(false)}
+        />
+      )}
     </div>
   );
 };

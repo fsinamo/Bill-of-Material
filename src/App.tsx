@@ -50,6 +50,7 @@ export default function App() {
   // App primary module state: 'consumption' | 'product_costing'
   const [activeModule, setActiveModule] = useState<'consumption' | 'product_costing'>('consumption');
   const [selectedCostingProductId, setSelectedCostingProductId] = useState<string | undefined>(undefined);
+  const [selectedCostingCalculationId, setSelectedCostingCalculationId] = useState<string | undefined>(undefined);
 
   // App state
   const [activeTab, setActiveTab] = useState<string>('calculator');
@@ -534,7 +535,9 @@ export default function App() {
             products={products}
             accessories={accessories}
             rawMaterials={rawMaterials}
+            calculations={calculations}
             initialProductId={selectedCostingProductId}
+            initialCalculationId={selectedCostingCalculationId}
             onNavigateToConsumption={() => setActiveModule('consumption')}
             sheetsConfig={sheetsConfig}
             onCostingsUpdated={loadAllData}
@@ -554,6 +557,11 @@ export default function App() {
                 onSaveCalculation={handleSaveCalculation}
                 onPrintCalculation={(calc) => setCalculationToPrint(calc)}
                 onResetActiveCalculation={() => setActiveCalculation(null)}
+                onNavigateToCosting={(prodId, calcId) => {
+                  setSelectedCostingProductId(prodId);
+                  setSelectedCostingCalculationId(calcId);
+                  setActiveModule('product_costing');
+                }}
               />
             )}
 
@@ -566,6 +574,11 @@ export default function App() {
                 onPrintCalculation={(calc) => setCalculationToPrint(calc)}
                 onDeleteCalculation={handleDeleteCalculation}
                 onDataUpdated={loadAllData}
+                onNavigateToCosting={(calc) => {
+                  setSelectedCostingProductId(calc.productId);
+                  setSelectedCostingCalculationId(calc.id);
+                  setActiveModule('product_costing');
+                }}
               />
             )}
 
@@ -579,6 +592,7 @@ export default function App() {
                 onSelectForCalculation={handleSelectProductForCalc}
                 onNavigateToCosting={(prod) => {
                   setSelectedCostingProductId(prod.id);
+                  setSelectedCostingCalculationId(undefined);
                   setActiveModule('product_costing');
                 }}
               />

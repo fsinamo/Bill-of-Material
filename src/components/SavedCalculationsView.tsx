@@ -14,7 +14,8 @@ import {
   Clock,
   CloudUpload,
   RotateCcw,
-  Eye
+  Eye,
+  Coins
 } from 'lucide-react';
 
 interface SavedCalculationsViewProps {
@@ -25,6 +26,7 @@ interface SavedCalculationsViewProps {
   onPrintCalculation: (calc: CalculationRecord) => void;
   onDeleteCalculation: (id: string) => void;
   onDataUpdated: () => void;
+  onNavigateToCosting?: (calc: CalculationRecord) => void;
 }
 
 export const SavedCalculationsView: React.FC<SavedCalculationsViewProps> = ({
@@ -35,6 +37,7 @@ export const SavedCalculationsView: React.FC<SavedCalculationsViewProps> = ({
   onPrintCalculation,
   onDeleteCalculation,
   onDataUpdated,
+  onNavigateToCosting,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [syncingId, setSyncingId] = useState<string | null>(null);
@@ -177,6 +180,17 @@ export const SavedCalculationsView: React.FC<SavedCalculationsViewProps> = ({
                     <Eye className="w-3.5 h-3.5" />
                     <span>Load & Edit</span>
                   </button>
+
+                  {onNavigateToCosting && (
+                    <button
+                      onClick={() => onNavigateToCosting(calc)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition shadow-xs"
+                      title="Buka dokumen perhitungan ini di Modul Product Costing untuk kalkulasi HPP"
+                    >
+                      <Coins className="w-3.5 h-3.5 text-amber-200" />
+                      <span>Buat Costing (HPP)</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => onPrintCalculation(calc)}

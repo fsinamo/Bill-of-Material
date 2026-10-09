@@ -170,7 +170,18 @@ export const storageService = {
       this.saveRawMaterials(INITIAL_RAW_MATERIALS);
       return INITIAL_RAW_MATERIALS;
     }
-    return list;
+    // Ensure each raw material has unitPrice populated
+    const migrated = list.map((m) => {
+      const defaultMatch = INITIAL_RAW_MATERIALS.find((init) => init.id === m.id);
+      return {
+        ...m,
+        unitPrice:
+          m.unitPrice !== undefined && m.unitPrice > 0
+            ? m.unitPrice
+            : defaultMatch?.unitPrice || 0,
+      };
+    });
+    return migrated;
   },
 
   saveRawMaterials(materials: RawMaterial[]): void {

@@ -33,7 +33,8 @@ import {
   PlusCircle,
   Trash2,
   X,
-  RotateCw
+  RotateCw,
+  Coins
 } from 'lucide-react';
 
 interface ConsumptionCalculatorProps {
@@ -45,6 +46,7 @@ interface ConsumptionCalculatorProps {
   onSaveCalculation: (calc: CalculationRecord) => void;
   onPrintCalculation: (calc: CalculationRecord) => void;
   onResetActiveCalculation: () => void;
+  onNavigateToCosting?: (productId: string, calculationId?: string) => void;
 }
 
 export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
@@ -56,6 +58,7 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
   onSaveCalculation,
   onPrintCalculation,
   onResetActiveCalculation,
+  onNavigateToCosting,
 }) => {
   const savedCompanyProfile = storageService.getCompanyProfile();
 
@@ -992,6 +995,24 @@ export const ConsumptionCalculator: React.FC<ConsumptionCalculatorProps> = ({
               <Copy className="w-4 h-4 text-slate-600" />
               <span>Pilihan Simpan (Timpa / Nama Baru)</span>
             </button>
+
+            {onNavigateToCosting && (
+              <button
+                type="button"
+                id="btn-navigate-to-costing"
+                onClick={() => {
+                  const targetId = initialCalculation?.id || `calc-${Date.now()}`;
+                  const record = constructCalculationRecord(targetId, calculationNumber);
+                  onSaveCalculation(record);
+                  onNavigateToCosting(selectedProductId, record.id);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 px-3.5 py-2.5 text-xs font-bold text-white transition shadow-sm"
+                title="Bawa hasil perhitungan konsumsi bahan baku ini ke Modul Product Costing untuk kalkulasi HPP"
+              >
+                <Coins className="w-4 h-4 text-amber-200" />
+                <span>Hitung HPP di Modul Costing →</span>
+              </button>
+            )}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">

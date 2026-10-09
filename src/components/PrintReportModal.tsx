@@ -36,21 +36,15 @@ interface ReportPageConfig {
   showSignatures: boolean;
 }
 
-// Partition data into distinct A4 sheets so zero data is ever cut off between pages
+// Partition data into distinct proportional A4 sheets so no report is stretched or squished
 const buildReportPages = (calculation: CalculationRecord): ReportPageConfig[] => {
   const summaryCount = calculation.summary?.length || 0;
   const details = calculation.details || [];
   const totalDetails = details.length;
 
-  // Single-page height budget in standard A4 (1040px usable):
-  // Letterhead(85) + OrderInfo(105) + SummaryTable(55 + summaryCount*38) + DetailsThead(35) + Signatures(135) + Notes(45) + Footer(25)
-  const singlePageBaseHeight =
-    85 + 105 + 55 + summaryCount * 38 + 35 + 135 + (calculation.notes ? 45 : 0) + 25;
-  const singlePageDetailsSpace = 1040 - singlePageBaseHeight;
-  const singlePageMaxDetails = Math.max(0, Math.floor(singlePageDetailsSpace / 36));
-
-  // If all details fit within a single page with comfortable margins
-  if (totalDetails <= singlePageMaxDetails && totalDetails <= 8) {
+  // Single-page is ONLY suitable when details <= 3 and summaryCount <= 2
+  // Anything longer MUST be 2 pages or more to preserve clean A4 proportions and prevent vertical stretching
+  if (totalDetails <= 3 && summaryCount <= 2) {
     return [
       {
         pageNumber: 1,
@@ -65,21 +59,16 @@ const buildReportPages = (calculation: CalculationRecord): ReportPageConfig[] =>
     ];
   }
 
-  // Multi-page layout
-  // Page 1 budget: Letterhead(85) + OrderInfo(105) + SummaryTable(55 + summaryCount*38) + DetailsThead(35) + ContinuationNotice(35) + Footer(25)
-  const page1BaseHeight = 85 + 105 + 55 + summaryCount * 38 + 35 + 35 + 25;
-  const page1AvailableForDetails = 1040 - page1BaseHeight;
-  // Limit Page 1 to between 5 and 10 rows to maintain clean aesthetics
-  const page1MaxDetails = Math.min(
-    10,
-    Math.max(4, Math.floor(page1AvailableForDetails / 36))
-  );
+  // Multi-page proportional layout:
+  // Page 1 budget: Letterhead + Order Info + Rekapitulasi Bahan Baku (Summary Table)
+  // Plus at most 3 detail rows so content remains clean, spacious, and completely proportional
+  const page1MaxDetails = Math.min(3, Math.max(2, totalDetails > 4 ? 3 : 2));
 
-  // Subsequent pages budget:
-  // Continuation page WITH signatures: 1040 - ContinuationHeader(65) - DetailsThead(35) - Signatures(135) - Notes(45) - Footer(25) = 735px => ~20 rows
-  const pageWithSignaturesMaxDetails = Math.floor(730 / 36);
-  // Continuation page WITHOUT signatures: 1040 - ContinuationHeader(65) - DetailsThead(35) - ContinuationNotice(35) - Footer(25) = 880px => ~24 rows
-  const fullContinuationMaxDetails = Math.floor(880 / 36);
+  // Continuation page capacity:
+  // With signatures: 4 to 5 detail rows max
+  const pageWithSignaturesMaxDetails = 5;
+  // Without signatures: up to 7 detail rows
+  const fullContinuationMaxDetails = 7;
 
   const pages: ReportPageConfig[] = [];
   let remainingDetails = [...details];
@@ -135,7 +124,7 @@ const buildReportPages = (calculation: CalculationRecord): ReportPageConfig[] =>
     }
   }
 
-  // Update totalPages
+  // Update totalPages on all page configs
   const total = pages.length;
   pages.forEach((p) => {
     p.totalPages = total;
@@ -287,11 +276,12 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
           clonedPage.style.width = '794px';
           clonedPage.style.maxWidth = '794px';
           clonedPage.style.minWidth = '794px';
+          clonedPage.style.minHeight = '1123px';
           clonedPage.style.margin = '0 auto';
           clonedPage.style.borderRadius = '0';
           clonedPage.style.boxShadow = 'none';
           clonedPage.style.border = 'none';
-          clonedPage.style.padding = '32px 36px';
+          clonedPage.style.padding = '36px 40px';
           clonedPage.style.backgroundColor = '#ffffff';
           clonedPage.style.boxSizing = 'border-box';
         }
@@ -331,9 +321,12 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
         }
 
         // Standard A4: 210 x 297 mm
-        // 794px x 1123px at 96 DPI has the exact 210/297 aspect ratio
+        // Calculate true height from canvas aspect ratio without stretching
+        const imgWidthMm = 210;
+        const imgHeightMm = (canvas.height * imgWidthMm) / canvas.width;
+        const targetHeightMm = Math.min(297, imgHeightMm);
         const imgData = canvas.toDataURL('image/jpeg', 0.98);
-        pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297);
+        pdf.addImage(imgData, 'JPEG', 0, 0, imgWidthMm, targetHeightMm);
       }
 
       if (scrollArea) scrollArea.scrollTop = prevScrollTop;
@@ -728,7 +721,7 @@ export const PrintReportModal: React.FC<PrintReportModalProps> = ({
             <div
               key={page.pageNumber}
               id={`printable-report-page-${page.pageNumber}`}
-              className="a4-page-sheet w-full max-w-[820px] bg-white rounded-xl shadow-lg border border-slate-300/80 p-8 sm:p-10 text-slate-900 min-h-[1050px] relative flex flex-col justify-between mb-8 print:mb-0 print:min-h-0 print:shadow-none print:border-none print:p-0 print:m-0 print:max-w-none print:w-full print:rounded-none"
+              className="a4-page-sheet w-full max-w-[820px] bg-white rounded-xl shadow-lg border border-slate-300/80 p-8 sm:p-10 text-slate-900 min-h-[1123px] relative flex flex-col justify-between mb-8 print:mb-0 print:min-h-0 print:shadow-none print:border-none print:p-0 print:m-0 print:max-w-none print:w-full print:rounded-none"
               style={{ boxSizing: 'border-box' }}
             >
               <div>

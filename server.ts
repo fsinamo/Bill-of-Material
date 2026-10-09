@@ -2,6 +2,12 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import {
+  INITIAL_RAW_MATERIALS,
+  INITIAL_ACCESSORIES,
+  INITIAL_PRODUCTS,
+  INITIAL_CALCULATIONS,
+} from './src/data/defaultData';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -88,29 +94,34 @@ const PRODUCTS_FILE = path.join(DATA_DIR, 'products.json');
 const MATERIALS_FILE = path.join(DATA_DIR, 'materials.json');
 const ACCESSORIES_FILE = path.join(DATA_DIR, 'accessories.json');
 
-// Ensure costings.json exists
+// Helper to read or seed array file
+const readOrSeed = (filePath: string, defaultData: any[]) => {
+  if (!fs.existsSync(filePath)) {
+    fs.writeFileSync(filePath, JSON.stringify(defaultData, null, 2), 'utf-8');
+    return defaultData;
+  }
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const parsed = JSON.parse(content);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      fs.writeFileSync(filePath, JSON.stringify(defaultData, null, 2), 'utf-8');
+      return defaultData;
+    }
+    return parsed;
+  } catch {
+    fs.writeFileSync(filePath, JSON.stringify(defaultData, null, 2), 'utf-8');
+    return defaultData;
+  }
+};
+
+// Ensure data files exist with default seeds if empty
+readOrSeed(CALCULATIONS_FILE, INITIAL_CALCULATIONS);
+readOrSeed(PRODUCTS_FILE, INITIAL_PRODUCTS);
+readOrSeed(MATERIALS_FILE, INITIAL_RAW_MATERIALS);
+readOrSeed(ACCESSORIES_FILE, INITIAL_ACCESSORIES);
+
 if (!fs.existsSync(COSTINGS_FILE)) {
   fs.writeFileSync(COSTINGS_FILE, JSON.stringify([], null, 2), 'utf-8');
-}
-
-// Ensure calculations.json exists
-if (!fs.existsSync(CALCULATIONS_FILE)) {
-  fs.writeFileSync(CALCULATIONS_FILE, JSON.stringify([], null, 2), 'utf-8');
-}
-
-// Ensure products.json exists
-if (!fs.existsSync(PRODUCTS_FILE)) {
-  fs.writeFileSync(PRODUCTS_FILE, JSON.stringify([], null, 2), 'utf-8');
-}
-
-// Ensure materials.json exists
-if (!fs.existsSync(MATERIALS_FILE)) {
-  fs.writeFileSync(MATERIALS_FILE, JSON.stringify([], null, 2), 'utf-8');
-}
-
-// Ensure accessories.json exists
-if (!fs.existsSync(ACCESSORIES_FILE)) {
-  fs.writeFileSync(ACCESSORIES_FILE, JSON.stringify([], null, 2), 'utf-8');
 }
 
 // API: Get Product Costing records permanently stored on server
