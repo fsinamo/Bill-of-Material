@@ -56,15 +56,15 @@ import {
 export const getAdaptiveCurrencyClass = (amount: number, isMain = false): string => {
   const digits = Math.round(Math.abs(amount)).toString().length;
   if (isMain) {
-    if (digits >= 13) return 'text-base sm:text-lg lg:text-xl font-black break-words tracking-tight leading-snug';
-    if (digits >= 11) return 'text-lg sm:text-xl lg:text-2xl font-black break-words tracking-tight leading-snug';
-    if (digits >= 9) return 'text-xl sm:text-2xl lg:text-3xl font-black tracking-tight leading-snug';
-    return 'text-2xl sm:text-3xl font-black tracking-tight';
+    if (digits >= 13) return 'text-xs sm:text-sm font-black tracking-tight leading-snug whitespace-nowrap overflow-hidden text-ellipsis';
+    if (digits >= 11) return 'text-sm sm:text-base font-black tracking-tight leading-snug whitespace-nowrap overflow-hidden text-ellipsis';
+    if (digits >= 9) return 'text-base sm:text-lg font-black tracking-tight leading-snug whitespace-nowrap overflow-hidden text-ellipsis';
+    return 'text-lg sm:text-xl font-black tracking-tight whitespace-nowrap overflow-hidden text-ellipsis';
   }
-  if (digits >= 13) return 'text-xs sm:text-sm lg:text-base font-black break-words tracking-tight leading-snug';
-  if (digits >= 11) return 'text-sm sm:text-base lg:text-lg font-black break-words tracking-tight leading-snug';
-  if (digits >= 9) return 'text-base sm:text-lg lg:text-xl font-black tracking-tight leading-snug';
-  return 'text-xl sm:text-2xl font-black tracking-tight';
+  if (digits >= 13) return 'text-[11px] sm:text-xs font-black tracking-tight leading-snug whitespace-nowrap overflow-hidden text-ellipsis';
+  if (digits >= 11) return 'text-xs sm:text-sm font-black tracking-tight leading-snug whitespace-nowrap overflow-hidden text-ellipsis';
+  if (digits >= 9) return 'text-xs sm:text-sm font-black tracking-tight leading-snug whitespace-nowrap overflow-hidden text-ellipsis';
+  return 'text-sm sm:text-base font-black tracking-tight whitespace-nowrap overflow-hidden text-ellipsis';
 };
 
 /**
@@ -150,8 +150,10 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
       : products[0]?.id || ''
   );
 
+  const prevPropProductIdRef = React.useRef(initialProductId);
   useEffect(() => {
-    if (initialProductId && products.some((p) => p.id === initialProductId)) {
+    if (initialProductId && initialProductId !== prevPropProductIdRef.current && products.some((p) => p.id === initialProductId)) {
+      prevPropProductIdRef.current = initialProductId;
       setSelectedProductId(initialProductId);
     }
   }, [initialProductId, products]);
@@ -357,6 +359,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   };
 
   // Helper to build initial default costing items from product accessories and standard services
+  // Helper to build initial default costing items from product accessories and standard services
   const buildDefaultItems = (
     prod: Product,
     orderQty: number,
@@ -368,7 +371,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
         code: 'ACC-UNK',
         name: 'Accessories',
         unit: 'buah',
-        category: 'raw_material_based' as const,
+        category: (rel.accessoryId.startsWith('jasa') ? 'service' : 'ready_made') as AccessoryCategory,
         createdAt: '',
         updatedAt: '',
       };
@@ -402,6 +405,25 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
       };
     });
 
+    // Automatically include standard ready_made accessories from master if not already present in product
+    const standardReadyMade = accessories.filter((a) => a.category === 'ready_made');
+    standardReadyMade.forEach((rm) => {
+      if (!items.some((i) => i.accessoryId === rm.id)) {
+        const rmPrice = rm.purchasePrice || 0;
+        items.push({
+          accessoryId: rm.id,
+          accessoryName: rm.name,
+          accessoryCategory: 'ready_made',
+          unitPrice: rmPrice,
+          usageQtyPerProduct: 1,
+          totalUsageQty: orderQty,
+          totalCostPerProduct: rmPrice,
+          totalCostBatch: rmPrice * orderQty,
+          notes: rm.notes || `Rp ${rmPrice.toLocaleString('id-ID')} / ${rm.unit} (Beli Jadi)`,
+        });
+      }
+    });
+
     // Automatically include standard master services if not already present in product
     const standardServices = accessories.filter((a) => a.category === 'service');
     standardServices.forEach((srv) => {
@@ -433,7 +455,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   const prevInitialProdIdRef = React.useRef<string | undefined>(initialProductId);
 
   // Safe initial setup: runs ONCE on mount or when explicit external navigation props change.
-  // NEVER overwrites user-edited services or ready-made accessories on background re-renders!
+  // ALWAYS checks if a saved costing exists for the product to load all saved services and purchased accessories!
   useEffect(() => {
     const propChanged =
       (initialCalculationId && initialCalculationId !== prevInitialCalcIdRef.current) ||
@@ -444,9 +466,19 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
       prevInitialProdIdRef.current = initialProductId;
       if (initialProductId) setSelectedProductId(initialProductId);
       if (initialCalculationId) setSelectedCalculationId(initialCalculationId);
-      setActiveCostingId(null);
+      
       const targetProd = products.find((p) => p.id === initialProductId) || currentProduct;
       if (targetProd) {
+        const allSaved = storageService.getProductCostings();
+        const existingCosting = allSaved.find(
+          (c) => c.productId === targetProd.id || c.productName.trim().toLowerCase() === targetProd.name.trim().toLowerCase()
+        );
+        if (existingCosting) {
+          handleLoadSavedCosting(existingCosting);
+          return;
+        }
+
+        setActiveCostingId(null);
         const targetCalc = allCalculations.find((c) => c.id === initialCalculationId) || null;
         const targetQty = targetCalc?.orderQuantity || 1000;
         setOrderQuantity(targetQty);
@@ -458,6 +490,16 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
 
     if (!isInitializedRef.current && currentProduct) {
       isInitializedRef.current = true;
+      const allSaved = storageService.getProductCostings();
+      const existingCosting = allSaved.find(
+        (c) => c.productId === currentProduct.id || c.productName.trim().toLowerCase() === currentProduct.name.trim().toLowerCase()
+      );
+
+      if (existingCosting) {
+        handleLoadSavedCosting(existingCosting);
+        return;
+      }
+
       const initialQty = activeReferencedCalc?.orderQuantity || orderQuantity || 1000;
       setOrderQuantity(initialQty);
       setTitle(`Costing HPP ${currentProduct.name} (Batch ${initialQty.toLocaleString('id-ID')} Pcs)`);
@@ -470,10 +512,24 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   // Handler for explicit product dropdown selection by user
   const handleProductChange = (newProductId: string) => {
     setSelectedProductId(newProductId);
-    setActiveCostingId(null);
     const newProd = products.find((p) => p.id === newProductId);
     if (!newProd) return;
 
+    // Check if there is an existing saved costing for this product
+    const allSaved = storageService.getProductCostings();
+    const existing = allSaved.find(
+      (c) =>
+        c.productId === newProductId ||
+        c.productName.trim().toLowerCase() === newProd.name.trim().toLowerCase()
+    );
+    if (existing) {
+      handleLoadSavedCosting(existing);
+      setNotice(`Memuat arsip costing tersimpan untuk produk: ${newProd.name}`);
+      setTimeout(() => setNotice(null), 3000);
+      return;
+    }
+
+    setActiveCostingId(null);
     const newMatchingCalc = allCalculations.find(
       (c) => c.productId === newProductId || c.productName.trim().toLowerCase() === newProd.name.trim().toLowerCase()
     );
@@ -952,7 +1008,14 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
 
   const handleLoadSavedCosting = (rec: ProductCostingRecord) => {
     setActiveCostingId(rec.id);
-    setSelectedProductId(rec.productId);
+    const matchedProd = products.find(
+      (p) => p.id === rec.productId || p.name.trim().toLowerCase() === rec.productName.trim().toLowerCase()
+    );
+    if (matchedProd) {
+      setSelectedProductId(matchedProd.id);
+    } else if (rec.productId) {
+      setSelectedProductId(rec.productId);
+    }
     setOrderQuantity(rec.orderQuantity);
     setCostingNumber(rec.costingNumber);
     setTitle(rec.title);
@@ -968,9 +1031,31 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
       const totalUsageQty = item.totalUsageQty ?? (usageQty * rec.orderQuantity);
       const totalCostPerProduct = item.totalCostPerProduct ?? (usageQty * unitPrice);
       const totalCostBatch = item.totalCostBatch ?? (totalUsageQty * unitPrice);
+
+      let cat = item.accessoryCategory;
+      if (!cat) {
+        const found = accessories.find(
+          (a) =>
+            a.id === item.accessoryId ||
+            a.name.trim().toLowerCase() === item.accessoryName.trim().toLowerCase()
+        );
+        if (found) {
+          cat = found.category;
+        } else if (
+          item.accessoryId.startsWith('jasa') ||
+          item.accessoryName.toLowerCase().includes('jasa')
+        ) {
+          cat = 'service';
+        } else if (item.rawMaterialName && item.rawMaterialName !== '-') {
+          cat = 'raw_material_based';
+        } else {
+          cat = 'ready_made';
+        }
+      }
+
       return {
         ...item,
-        accessoryCategory: item.accessoryCategory || (item.accessoryId.startsWith('jasa') ? 'service' : 'raw_material_based'),
+        accessoryCategory: cat,
         usageQtyPerProduct: usageQty,
         unitPrice,
         totalUsageQty,
@@ -2017,7 +2102,7 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
           </div>
 
           {/* Financial KPI Cards & Margin Simulator - Disesuaikan dengan Jumlah Order & Nilai Besar (Milyaran) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {/* Card 1: Total Biaya Aksesoris Pesanan */}
             <div className="rounded-2xl border border-amber-300 bg-amber-50/40 p-4 shadow-xs flex flex-col justify-between min-w-0 overflow-hidden">
               <div className="min-w-0">
@@ -2029,12 +2114,12 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                     Pesanan
                   </span>
                 </div>
-                <div className="mt-1 font-mono text-amber-950 min-w-0" title={`Rp ${totalAccessoriesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`}>
-                  <div className={getAdaptiveCurrencyClass(totalAccessoriesBatchCost)}>
+                <div className="mt-1 font-mono text-amber-950 min-w-0 max-w-full overflow-hidden" title={`Rp ${totalAccessoriesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`}>
+                  <div className={`${getAdaptiveCurrencyClass(totalAccessoriesBatchCost)} break-all`}>
                     Rp {totalAccessoriesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                   </div>
                   {formatShortIndonesianCurrency(totalAccessoriesBatchCost) && (
-                    <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200/80 text-amber-950">
+                    <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200/80 text-amber-950 whitespace-nowrap">
                       {formatShortIndonesianCurrency(totalAccessoriesBatchCost)}
                     </span>
                   )}
@@ -2063,12 +2148,12 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                     Pesanan
                   </span>
                 </div>
-                <div className="mt-1 font-mono text-indigo-950 min-w-0" title={`Rp ${totalServicesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`}>
-                  <div className={getAdaptiveCurrencyClass(totalServicesBatchCost)}>
+                <div className="mt-1 font-mono text-indigo-950 min-w-0 max-w-full overflow-hidden" title={`Rp ${totalServicesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`}>
+                  <div className={`${getAdaptiveCurrencyClass(totalServicesBatchCost)} break-all`}>
                     Rp {totalServicesBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                   </div>
                   {formatShortIndonesianCurrency(totalServicesBatchCost) && (
-                    <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-200/80 text-indigo-950">
+                    <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-200/80 text-indigo-950 whitespace-nowrap">
                       {formatShortIndonesianCurrency(totalServicesBatchCost)}
                     </span>
                   )}
@@ -2097,12 +2182,12 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                     HPP Batch
                   </span>
                 </div>
-                <div className="mt-1 font-mono text-emerald-950 min-w-0" title={`Rp ${totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`}>
-                  <div className={getAdaptiveCurrencyClass(totalBatchCost, true)}>
+                <div className="mt-1 font-mono text-emerald-950 min-w-0 max-w-full overflow-hidden" title={`Rp ${totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`}>
+                  <div className={`${getAdaptiveCurrencyClass(totalBatchCost, true)} break-all`}>
                     Rp {totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                   </div>
                   {formatShortIndonesianCurrency(totalBatchCost) && (
-                    <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-emerald-700 text-white text-[11px] font-black shadow-2xs">
+                    <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-emerald-700 text-white text-[11px] font-black shadow-2xs whitespace-nowrap">
                       {formatShortIndonesianCurrency(totalBatchCost)}
                     </span>
                   )}
@@ -2141,12 +2226,12 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
                   </div>
                 </div>
 
-                <div className="mt-1 font-mono text-amber-950 min-w-0" title={`Rp ${(recommendedSellingPricePerUnit * orderQuantity).toLocaleString('id-ID', { maximumFractionDigits: 0 })}`}>
-                  <div className={getAdaptiveCurrencyClass(recommendedSellingPricePerUnit * orderQuantity)}>
+                <div className="mt-1 font-mono text-amber-950 min-w-0 max-w-full overflow-hidden" title={`Rp ${(recommendedSellingPricePerUnit * orderQuantity).toLocaleString('id-ID', { maximumFractionDigits: 0 })}`}>
+                  <div className={`${getAdaptiveCurrencyClass(recommendedSellingPricePerUnit * orderQuantity)} break-all`}>
                     Rp {(recommendedSellingPricePerUnit * orderQuantity).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                   </div>
                   {formatShortIndonesianCurrency(recommendedSellingPricePerUnit * orderQuantity) && (
-                    <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200/90 text-amber-950">
+                    <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200/90 text-amber-950 whitespace-nowrap">
                       {formatShortIndonesianCurrency(recommendedSellingPricePerUnit * orderQuantity)}
                     </span>
                   )}

@@ -2,6 +2,59 @@
 <html lang="id">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function() {
+        // Suppress Vite HMR WebSocket error in Cloud Run / iframe preview
+        window.addEventListener('unhandledrejection', function(event) {
+          if (event && event.reason && (
+            (event.reason.message && event.reason.message.includes('WebSocket closed without opened')) ||
+            (typeof event.reason === 'string' && event.reason.includes('WebSocket closed without opened'))
+          )) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        });
+        window.addEventListener('error', function(event) {
+          if (event && (
+            (event.message && event.message.includes('WebSocket closed without opened')) ||
+            (event.error && event.error.message && event.error.message.includes('WebSocket closed without opened'))
+          )) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        });
+
+        // Intercept Vite-HMR websocket to avoid closed-without-opened error in headless/iframe preview
+        if (typeof window !== 'undefined' && window.WebSocket) {
+          var OriginalWebSocket = window.WebSocket;
+          window.WebSocket = function(url, protocols) {
+            var isHmr = (protocols === 'vite-hmr') ||
+                        (Array.isArray(protocols) && protocols.indexOf('vite-hmr') !== -1) ||
+                        (typeof url === 'string' && (url.indexOf('token=') !== -1 && url.indexOf('vite') !== -1));
+            if (isHmr) {
+              var target = new EventTarget();
+              target.url = url;
+              target.readyState = 1; // WebSocket.OPEN
+              target.OPEN = 1;
+              target.CONNECTING = 0;
+              target.CLOSING = 2;
+              target.CLOSED = 3;
+              target.bufferedAmount = 0;
+              target.binaryType = 'blob';
+              target.send = function() {};
+              target.close = function() {};
+              return target;
+            }
+            return new OriginalWebSocket(url, protocols);
+          };
+          window.WebSocket.prototype = OriginalWebSocket.prototype;
+          window.WebSocket.CONNECTING = OriginalWebSocket.CONNECTING;
+          window.WebSocket.OPEN = OriginalWebSocket.OPEN;
+          window.WebSocket.CLOSING = OriginalWebSocket.CLOSING;
+          window.WebSocket.CLOSED = OriginalWebSocket.CLOSED;
+        }
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GarmentPro - Konsumsi Bahan</title>
     <meta name="description" content="Aplikasi modular produksi garment untuk perhitungan kebutuhan konsumsi bahan baku, master data, dan sinkronisasi Google Sheets" />

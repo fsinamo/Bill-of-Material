@@ -1,5 +1,5 @@
 import { Product, RawMaterial, Accessory, CalculationRecord, GoogleSheetsConfig, SyncLog, AppThemeId, ProductCostingRecord } from '../types';
-import { INITIAL_PRODUCTS, INITIAL_RAW_MATERIALS, INITIAL_ACCESSORIES, INITIAL_CALCULATIONS } from '../data/defaultData';
+import { INITIAL_PRODUCTS, INITIAL_RAW_MATERIALS, INITIAL_ACCESSORIES, INITIAL_CALCULATIONS, INITIAL_COSTINGS } from '../data/defaultData';
 import { DEFAULT_THEME_ID } from '../data/themes';
 
 const KEYS = {
@@ -268,7 +268,7 @@ export const storageService = {
     }
 
     // Fallback: check backup key if primary is empty
-    if ((!list || list.length === 0)) {
+    if (!list || list.length === 0) {
       const backupRaw = localStorage.getItem(KEYS.COSTINGS_BACKUP);
       if (backupRaw) {
         try {
@@ -280,6 +280,11 @@ export const storageService = {
           // ignore
         }
       }
+    }
+
+    if (!list || list.length === 0) {
+      this.saveProductCostings(INITIAL_COSTINGS);
+      return INITIAL_COSTINGS;
     }
 
     return Array.isArray(list) ? list : [];
@@ -311,6 +316,92 @@ export const storageService = {
       updated = [costing, ...list];
     }
     this.saveProductCostings(updated);
+
+    // 1. Synchronize product components in Master Products so all components (ready-made accessories,
+    // services/ongkos jasa, and raw-material based accessories) are permanently attached to the product definition
+    try {
+      const allProducts = this.getProducts();
+      const pIdx = allProducts.findIndex(
+        (p) =>
+          p.id === costing.productId ||
+          p.name.trim().toLowerCase() === costing.productName.trim().toLowerCase()
+      );
+      if (pIdx >= 0) {
+        const prod = allProducts[pIdx];
+        const newRelations = (costing.items || []).map((item) => ({
+          accessoryId: item.accessoryId,
+          qtyPerProduct: item.usageQtyPerProduct || 1,
+        }));
+        allProducts[pIdx] = {
+          ...prod,
+          accessories: newRelations,
+          updatedAt: new Date().toISOString(),
+        };
+        this.saveProducts(allProducts);
+      }
+    } catch (e) {
+      console.warn('Error syncing product accessories on costing save:', e);
+    }
+
+    // 2. CRITICAL: Permanently synchronize all costing items (services/ongkos jasa and ready-made accessories)
+    // into Master Accessories so their definitions, names, and purchase prices/tariffs are never lost!
+    try {
+      const allAcc = this.getAccessories();
+      let accModified = false;
+      const updatedAccList = [...allAcc];
+
+      (costing.items || []).forEach((item) => {
+        const existingIdx = updatedAccList.findIndex(
+          (a) =>
+            a.id === item.accessoryId ||
+            a.name.trim().toLowerCase() === item.accessoryName.trim().toLowerCase()
+        );
+
+        if (existingIdx >= 0) {
+          const currentAcc = updatedAccList[existingIdx];
+          const newPrice = item.unitPrice > 0 ? item.unitPrice : currentAcc.purchasePrice;
+          if (newPrice !== currentAcc.purchasePrice) {
+            updatedAccList[existingIdx] = {
+              ...currentAcc,
+              purchasePrice: newPrice,
+              category: item.accessoryCategory || currentAcc.category,
+              notes: item.notes || currentAcc.notes,
+              updatedAt: new Date().toISOString(),
+            };
+            accModified = true;
+          }
+        } else {
+          // New component (custom service or newly added accessory): permanently add to Master Accessories!
+          const isService =
+            item.accessoryCategory === 'service' ||
+            item.accessoryId.startsWith('jasa') ||
+            item.accessoryName.toLowerCase().includes('jasa');
+
+          const newAcc: Accessory = {
+            id: item.accessoryId,
+            code: isService
+              ? `JSA-${Date.now().toString().slice(-4)}`
+              : `ACC-${Date.now().toString().slice(-4)}`,
+            name: item.accessoryName,
+            unit: isService ? 'pcs' : 'buah',
+            category: item.accessoryCategory || (isService ? 'service' : 'ready_made'),
+            purchasePrice: item.unitPrice || 0,
+            notes: item.notes || (isService ? 'Tarif Jasa Pengerjaan' : 'Beli Jadi (Langsung)'),
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          updatedAccList.push(newAcc);
+          accModified = true;
+        }
+      });
+
+      if (accModified) {
+        this.saveAccessories(updatedAccList);
+      }
+    } catch (e) {
+      console.warn('Error syncing master accessories on costing save:', e);
+    }
+
     return updated;
   },
 
@@ -373,6 +464,11 @@ export const storageService = {
       } catch {
         // ignore
       }
+    }
+
+    if (local.length === 0) {
+      this.saveProductCostings(INITIAL_COSTINGS);
+      return INITIAL_COSTINGS;
     }
 
     return local;

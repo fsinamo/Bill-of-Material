@@ -848,7 +848,7 @@ export const PrintCostingReportModal: React.FC<PrintCostingReportModalProps> = (
                         TOTAL BIAYA PRODUKSI HPP PESANAN ({costing.orderQuantity.toLocaleString('id-ID')} PCS)
                       </span>
                       <div className="font-mono font-black mt-0.5 tracking-tight min-w-0 flex flex-wrap items-baseline gap-2">
-                        <span className={totalBatchCost >= 10_000_000_000 ? 'text-xl sm:text-2xl font-black' : totalBatchCost >= 1_000_000_000 ? 'text-2xl sm:text-3xl font-black' : 'text-2xl sm:text-3xl font-black'}>
+                        <span className={totalBatchCost >= 10_000_000_000 ? 'text-lg sm:text-xl lg:text-2xl font-black break-all' : totalBatchCost >= 1_000_000_000 ? 'text-xl sm:text-2xl font-black' : 'text-2xl sm:text-3xl font-black'}>
                           Rp {totalBatchCost.toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                         </span>
                         {formatShortIndonesianCurrency(totalBatchCost) && (
@@ -867,7 +867,7 @@ export const PrintCostingReportModal: React.FC<PrintCostingReportModalProps> = (
                         Total Nilai Penjualan (+{targetMarkupPercent}%):
                       </span>
                       <div className="font-mono font-black text-white mt-0.5 flex flex-wrap sm:justify-end items-baseline gap-1.5">
-                        <span className={(recommendedSellingPricePerUnit * costing.orderQuantity) >= 10_000_000_000 ? 'text-base sm:text-lg font-black' : 'text-lg sm:text-xl font-black'}>
+                        <span className={(recommendedSellingPricePerUnit * costing.orderQuantity) >= 10_000_000_000 ? 'text-sm sm:text-base lg:text-lg font-black break-all' : 'text-lg sm:text-xl font-black'}>
                           Rp {(recommendedSellingPricePerUnit * costing.orderQuantity).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                         </span>
                         {formatShortIndonesianCurrency(recommendedSellingPricePerUnit * costing.orderQuantity) && (
@@ -883,23 +883,23 @@ export const PrintCostingReportModal: React.FC<PrintCostingReportModalProps> = (
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs pt-1">
-                    <div className="bg-white/80 p-2.5 rounded-xl border border-amber-200">
-                      <span className="text-slate-600 block text-[10px] uppercase font-semibold">
+                    <div className="bg-white/80 p-2.5 rounded-xl border border-amber-200 min-w-0 overflow-hidden">
+                      <span className="text-slate-600 block text-[10px] uppercase font-semibold truncate">
                         Total Accessories ({costing.orderQuantity} Pcs)
                       </span>
-                      <strong className="font-mono text-amber-950 text-sm font-black block mt-0.5">
+                      <strong className="font-mono text-amber-950 text-xs sm:text-sm font-black block mt-0.5 break-all">
                         Rp {(costing.totalAccessoriesBatchCost ?? (totalAccessoriesCostPerUnit * costing.orderQuantity)).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                       </strong>
-                      <span className="text-[9.5px] text-slate-500 block">
+                      <span className="text-[9.5px] text-slate-500 block truncate">
                         Rp {totalAccessoriesCostPerUnit.toLocaleString('id-ID', { minimumFractionDigits: 2 })}/pcs
                       </span>
                     </div>
 
-                    <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-200">
-                      <span className="text-indigo-800 block text-[10px] uppercase font-semibold">
+                    <div className="bg-white/80 p-2.5 rounded-xl border border-indigo-200 min-w-0 overflow-hidden">
+                      <span className="text-indigo-800 block text-[10px] uppercase font-semibold truncate">
                         Total Ongkos Jasa ({costing.orderQuantity} Pcs)
                       </span>
-                      <strong className="font-mono text-indigo-950 text-sm font-black block mt-0.5">
+                      <strong className="font-mono text-indigo-950 text-xs sm:text-sm font-black block mt-0.5 break-all">
                         Rp {(costing.totalServicesBatchCost ?? (totalServicesCostPerUnit * costing.orderQuantity)).toLocaleString('id-ID', { maximumFractionDigits: 0 })}
                       </strong>
                       <span className="text-[9.5px] text-indigo-700 block">

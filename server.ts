@@ -7,6 +7,7 @@ import {
   INITIAL_ACCESSORIES,
   INITIAL_PRODUCTS,
   INITIAL_CALCULATIONS,
+  INITIAL_COSTINGS,
 } from './src/data/defaultData';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -120,9 +121,7 @@ readOrSeed(PRODUCTS_FILE, INITIAL_PRODUCTS);
 readOrSeed(MATERIALS_FILE, INITIAL_RAW_MATERIALS);
 readOrSeed(ACCESSORIES_FILE, INITIAL_ACCESSORIES);
 
-if (!fs.existsSync(COSTINGS_FILE)) {
-  fs.writeFileSync(COSTINGS_FILE, JSON.stringify([], null, 2), 'utf-8');
-}
+readOrSeed(COSTINGS_FILE, INITIAL_COSTINGS);
 
 // API: Get Product Costing records permanently stored on server
 app.get('/api/costings', (req, res) => {
@@ -270,6 +269,7 @@ if (!isProduction) {
       host: HOST,
       port: PORT,
       allowedHosts: true,
+      hmr: false,
     },
     appType: 'spa',
   });
