@@ -73,10 +73,10 @@ export const GoogleSheetsSyncView: React.FC<GoogleSheetsSyncViewProps> = ({
     return updated;
   };
 
-  // Debounced auto-save when user enters or pastes a valid Apps Script URL
+  // Debounced auto-save when user enters or pastes any valid HTTP Apps Script URL
   React.useEffect(() => {
     const trimmed = url.trim();
-    if (trimmed && trimmed.includes('script.google.com/macros/s/') && trimmed !== config.webAppUrl) {
+    if (trimmed && trimmed.startsWith('http') && trimmed !== config.webAppUrl) {
       const timer = setTimeout(() => {
         persistConfig(trimmed, autoSync);
       }, 700);
@@ -93,10 +93,10 @@ export const GoogleSheetsSyncView: React.FC<GoogleSheetsSyncViewProps> = ({
 
   const handleSaveConfig = () => {
     const trimmed = url.trim();
-    persistConfig(trimmed, autoSync, false);
+    persistConfig(trimmed, autoSync, true);
     setTestResult({
       success: true,
-      message: 'Pengaturan Google Sheets berhasil disimpan PERMANEN! URL tidak akan hilang saat reload atau berpindah tab/perangkat.',
+      message: 'Pengaturan Google Sheets berhasil disimpan PERMANEN! Disimpan di LocalStorage, Cookie (1 tahun), IndexedDB, dan Server Disk. URL tidak akan hilang saat komputer dimatikan atau browser ditutup.',
     });
   };
 

@@ -208,17 +208,25 @@ function writeCalculations(ss, calculations) {
 
 function appendOrUpdateCalculation(ss, calc) {
   if (!calc) return;
-  var sheet = getOrCreateSheet(ss, 'Konsumsi_Bahan');
-  var data = sheet.getDataRange().getValues();
-  var rowIndex = -1;
+  var sheet = ss.getSheetByName('Konsumsi_Bahan');
+  var isNew = false;
+  if (!sheet) {
+    sheet = ss.insertSheet('Konsumsi_Bahan');
+    isNew = true;
+  }
 
-  if (data.length > 1) {
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] == calc.id || data[i][1] == calc.calculationNumber) {
-        rowIndex = i + 1;
-        break;
-      }
-    }
+  var headers = [
+    'ID', 'No Perhitungan', 'Judul / Ref PO', 'Nama Produk', 
+    'Jumlah Pesanan', 'Tanggal Perhitungan', 'Total Bahan Baku (Ringkasan)', 
+    'Rincian Detail (JSON)', 'Catatan', 'Terakhir Disinkron'
+  ];
+
+  var lastRow = sheet.getLastRow();
+  if (isNew || lastRow === 0) {
+    sheet.clear();
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e2e8f0');
+    lastRow = 1;
   }
 
   var summaryText = (calc.summary || []).map(function(s) {
@@ -238,18 +246,24 @@ function appendOrUpdateCalculation(ss, calc) {
     new Date().toISOString()
   ];
 
-  if (rowIndex > 0) {
-    sheet.getRange(rowIndex, 1, 1, rowValues.length).setValues([rowValues]);
-  } else {
-    if (data.length === 0 || (data.length === 1 && data[0][0] === '')) {
-      var headers = [
-        'ID', 'No Perhitungan', 'Judul / Ref PO', 'Nama Produk', 
-        'Jumlah Pesanan', 'Tanggal Perhitungan', 'Total Bahan Baku (Ringkasan)', 
-        'Rincian Detail (JSON)', 'Catatan', 'Terakhir Disinkron'
-      ];
-      sheet.appendRow(headers);
-      sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#e2e8f0');
+  var foundRow = -1;
+  if (lastRow > 1) {
+    var checkRange = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+    for (var i = 0; i < checkRange.length; i++) {
+      if (checkRange[i][0] == calc.id || checkRange[i][1] == calc.calculationNumber) {
+        foundRow = i + 2;
+        break;
+      }
     }
+  }
+
+  if (sheet.getMaxColumns() < rowValues.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), rowValues.length - sheet.getMaxColumns());
+  }
+
+  if (foundRow > 0) {
+    sheet.getRange(foundRow, 1, 1, rowValues.length).setValues([rowValues]);
+  } else {
     sheet.appendRow(rowValues);
   }
 }
@@ -295,17 +309,27 @@ function writeCostings(ss, costings) {
 
 function appendOrUpdateCosting(ss, costing) {
   if (!costing) return;
-  var sheet = getOrCreateSheet(ss, 'Product_Costing');
-  var data = sheet.getDataRange().getValues();
-  var rowIndex = -1;
+  var sheet = ss.getSheetByName('Product_Costing');
+  var isNew = false;
+  if (!sheet) {
+    sheet = ss.insertSheet('Product_Costing');
+    isNew = true;
+  }
 
-  if (data.length > 1) {
-    for (var i = 1; i < data.length; i++) {
-      if (data[i][0] == costing.id || data[i][1] == costing.costingNumber) {
-        rowIndex = i + 1;
-        break;
-      }
-    }
+  var headers = [
+    'ID', 'No Costing', 'Judul Costing', 'Nama Produk', 'Kode Produk', 
+    'Jumlah Pesanan', 'Biaya Accessories / Pcs', 'Biaya Jasa / Pcs', 
+    'Total HPP / Pcs', 'Total HPP Batch', 'Markup (%)', 
+    'Harga Jual Target / Pcs', 'Tanggal', 'Rincian Item (JSON)', 
+    'Catatan', 'Terakhir Disinkron'
+  ];
+
+  var lastRow = sheet.getLastRow();
+  if (isNew || lastRow === 0) {
+    sheet.clear();
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#fef3c7');
+    lastRow = 1;
   }
 
   var rowValues = [
@@ -327,20 +351,24 @@ function appendOrUpdateCosting(ss, costing) {
     new Date().toISOString()
   ];
 
-  if (rowIndex > 0) {
-    sheet.getRange(rowIndex, 1, 1, rowValues.length).setValues([rowValues]);
-  } else {
-    if (data.length === 0 || (data.length === 1 && data[0][0] === '')) {
-      var headers = [
-        'ID', 'No Costing', 'Judul Costing', 'Nama Produk', 'Kode Produk', 
-        'Jumlah Pesanan', 'Biaya Accessories / Pcs', 'Biaya Jasa / Pcs', 
-        'Total HPP / Pcs', 'Total HPP Batch', 'Markup (%)', 
-        'Harga Jual Target / Pcs', 'Tanggal', 'Rincian Item (JSON)', 
-        'Catatan', 'Terakhir Disinkron'
-      ];
-      sheet.appendRow(headers);
-      sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#fef3c7');
+  var foundRow = -1;
+  if (lastRow > 1) {
+    var checkRange = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+    for (var i = 0; i < checkRange.length; i++) {
+      if (checkRange[i][0] == costing.id || checkRange[i][1] == costing.costingNumber) {
+        foundRow = i + 2;
+        break;
+      }
     }
+  }
+
+  if (sheet.getMaxColumns() < rowValues.length) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), rowValues.length - sheet.getMaxColumns());
+  }
+
+  if (foundRow > 0) {
+    sheet.getRange(foundRow, 1, 1, rowValues.length).setValues([rowValues]);
+  } else {
     sheet.appendRow(rowValues);
   }
 }
@@ -717,6 +745,8 @@ export const sheetsSyncService = {
         body: JSON.stringify({
           action: 'save_costing',
           costing: costing,
+          // Extra compatibility payload for transitional scripts
+          costings: [costing],
         }),
       });
 
@@ -730,9 +760,16 @@ export const sheetsSyncService = {
           message: `Costing HPP ${costing.costingNumber} (${costing.productName}) tersimpan di Google Sheets (Tab Product_Costing)`,
         });
         return { success: true, message: result.message || 'Costing HPP tersinkron ke Google Sheets!' };
-      } else {
-        throw new Error(result.message || 'Gagal menyimpan costing ke Google Sheets');
       }
+
+      // If action is not recognized, the user's deployed script is an older version
+      if (result.message && (result.message.includes('tidak dikenali') || result.message.includes('save_costing'))) {
+        throw new Error(
+          'Kode Apps Script di Google Sheets Anda adalah versi lama dan belum memiliki fitur penyimpanan Product Costing. Silakan buka pengaturan Google Sheets > klik "Salin Kode Apps Script Terbaru" > tempel di menu Extensions > Apps Script pada Spreadsheet Anda > klik Deploy > New deployment (Web app, Anyone).'
+        );
+      }
+
+      throw new Error(result.message || 'Gagal menyimpan costing ke Google Sheets');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       storageService.addSyncLog({

@@ -167,7 +167,6 @@ export const storageService = {
       }
     }
     if (!list || list.length === 0) {
-      this.saveRawMaterials(INITIAL_RAW_MATERIALS);
       return INITIAL_RAW_MATERIALS;
     }
     // Ensure each raw material has unitPrice populated
@@ -202,7 +201,6 @@ export const storageService = {
       raw = localStorage.getItem(KEYS.ACCESSORIES_BACKUP);
     }
     if (!raw) {
-      this.saveAccessories(INITIAL_ACCESSORIES);
       return INITIAL_ACCESSORIES;
     }
     try {
@@ -283,7 +281,6 @@ export const storageService = {
     }
 
     if (!list || list.length === 0) {
-      this.saveProductCostings(INITIAL_COSTINGS);
       return INITIAL_COSTINGS;
     }
 
@@ -316,6 +313,11 @@ export const storageService = {
       updated = [costing, ...list];
     }
     this.saveProductCostings(updated);
+    try {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('garment_costings_changed'));
+      }
+    } catch {}
 
     // 1. Synchronize product components in Master Products so all components (ready-made accessories,
     // services/ongkos jasa, and raw-material based accessories) are permanently attached to the product definition
@@ -467,7 +469,6 @@ export const storageService = {
     }
 
     if (local.length === 0) {
-      this.saveProductCostings(INITIAL_COSTINGS);
       return INITIAL_COSTINGS;
     }
 
@@ -501,7 +502,6 @@ export const storageService = {
     }
 
     if (!list || list.length === 0) {
-      this.saveCalculations(INITIAL_CALCULATIONS);
       return INITIAL_CALCULATIONS;
     }
 
@@ -577,6 +577,17 @@ export const storageService = {
 
   // Sheets Config with Multi-Tier Permanent Persistence (Server, IDB, LocalStorage Primary & Backup)
   getSheetsConfig(): GoogleSheetsConfig {
+    // Cookie helper for fallback survival across browser data wipes
+    const getCookieUrl = (): string => {
+      if (typeof document === 'undefined') return '';
+      try {
+        const match = document.cookie.match(/(?:^|;\s*)garment_webapp_url=([^;]*)/);
+        return match ? decodeURIComponent(match[1]).trim() : '';
+      } catch {
+        return '';
+      }
+    };
+
     let config: GoogleSheetsConfig | null = null;
     const raw = localStorage.getItem(KEYS.SHEETS_CONFIG);
     if (raw) {
@@ -602,9 +613,11 @@ export const storageService = {
       }
     }
 
-    // Fallback 2: check isolated permanent webapp url key
+    // Fallback 2: check isolated permanent webapp url keys
     if (!config?.webAppUrl) {
-      const isolatedUrl = localStorage.getItem(KEYS.WEBAPP_URL_PERMANENT);
+      const isolatedUrl =
+        localStorage.getItem(KEYS.WEBAPP_URL_PERMANENT) ||
+        localStorage.getItem('garment_permanent_sheets_url');
       if (isolatedUrl && isolatedUrl.trim()) {
         config = {
           ...(config || {
@@ -612,6 +625,20 @@ export const storageService = {
             autoSyncOnSave: true,
           }),
           webAppUrl: isolatedUrl.trim(),
+        };
+      }
+    }
+
+    // Fallback 3: check persistent 1-year cookie
+    if (!config?.webAppUrl) {
+      const cookieUrl = getCookieUrl();
+      if (cookieUrl) {
+        config = {
+          ...(config || {
+            spreadsheetName: 'Data_Produksi_Garment_Konsumsi_Bahan',
+            autoSyncOnSave: true,
+          }),
+          webAppUrl: cookieUrl,
         };
       }
     }
@@ -637,12 +664,20 @@ export const storageService = {
       const updatedConfig = { ...config, webAppUrl: cleanUrl };
       localStorage.setItem(KEYS.SHEETS_CONFIG_BACKUP, JSON.stringify(updatedConfig));
       localStorage.setItem(KEYS.WEBAPP_URL_PERMANENT, cleanUrl);
+      localStorage.setItem('garment_permanent_sheets_url', cleanUrl);
 
-      // 3. Save to IndexedDB
+      // 3. Save to 1-Year Persistent Cookie (survives browser clears/reboots)
+      try {
+        if (typeof document !== 'undefined') {
+          document.cookie = `garment_webapp_url=${encodeURIComponent(cleanUrl)}; max-age=31536000; path=/; SameSite=Lax`;
+        }
+      } catch {}
+
+      // 4. Save to IndexedDB
       saveToIndexedDB('sheetsConfig', updatedConfig);
       saveToIndexedDB('webAppUrl', cleanUrl);
 
-      // 4. Save to Server Disk via /api/sheets-config
+      // 5. Save to Server Disk via /api/sheets-config and /api/sheets-url
       fetch('/api/sheets-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -650,26 +685,33 @@ export const storageService = {
       }).catch((err) => {
         console.warn('Background server sync for sheets config:', err);
       });
-    } else {
-      // If user deliberately wants to clear, update IDB & server as well
-      saveToIndexedDB('sheetsConfig', config);
-      fetch('/api/sheets-config', {
+
+      fetch('/api/sheets-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config),
+        body: JSON.stringify({ webAppUrl: cleanUrl }),
       }).catch(() => {});
+    } else {
+      // NOTE: We do NOT send an empty URL to the server here so we never accidentally wipe disk on client reboots!
+      // Server wiping only happens if clearSheetsConfigPermanently is explicitly invoked.
+      saveToIndexedDB('sheetsConfig', config);
     }
+
+    try {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('garment_sheets_config_changed'));
+      }
+    } catch {}
   },
 
   async syncPermanentSheetsConfig(): Promise<GoogleSheetsConfig | null> {
     const local = this.getSheetsConfig();
 
-    // Check server first
+    // 1. Check server first (/api/sheets-config and /api/sheets-url)
     try {
       const res = await fetch('/api/sheets-config');
       if (res.ok) {
         const serverConfig: GoogleSheetsConfig = await res.json();
-        // If server has a configured webAppUrl and local doesn't, or server is newer
         if (serverConfig.webAppUrl && serverConfig.webAppUrl.trim()) {
           this.saveSheetsConfig(serverConfig);
           return serverConfig;
@@ -680,13 +722,33 @@ export const storageService = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(local),
           }).catch(() => {});
+          fetch('/api/sheets-url', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ webAppUrl: local.webAppUrl }),
+          }).catch(() => {});
         }
       }
     } catch {
       // Server might be unreachable (offline)
     }
 
-    // Check IndexedDB if local is still missing url
+    // 2. Check dedicated /api/sheets-url fallback
+    if (!local.webAppUrl) {
+      try {
+        const urlRes = await fetch('/api/sheets-url');
+        if (urlRes.ok) {
+          const urlData = await urlRes.json();
+          if (urlData?.webAppUrl && urlData.webAppUrl.trim()) {
+            const restored = { ...local, webAppUrl: urlData.webAppUrl.trim() };
+            this.saveSheetsConfig(restored);
+            return restored;
+          }
+        }
+      } catch {}
+    }
+
+    // 3. Check IndexedDB if local is still missing url
     if (!local.webAppUrl) {
       try {
         const idbConfig = await getFromIndexedDB<GoogleSheetsConfig>('sheetsConfig');
@@ -714,13 +776,35 @@ export const storageService = {
     localStorage.removeItem(KEYS.SHEETS_CONFIG);
     localStorage.removeItem(KEYS.SHEETS_CONFIG_BACKUP);
     localStorage.removeItem(KEYS.WEBAPP_URL_PERMANENT);
+    localStorage.removeItem('garment_permanent_sheets_url');
+
+    try {
+      if (typeof document !== 'undefined') {
+        document.cookie = 'garment_webapp_url=; max-age=0; path=/;';
+      }
+    } catch {}
+
     saveToIndexedDB('sheetsConfig', cleared);
     saveToIndexedDB('webAppUrl', '');
+
     fetch('/api/sheets-config', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(cleared),
+      body: JSON.stringify({ ...cleared, clearExplicitly: true }),
     }).catch(() => {});
+
+    fetch('/api/sheets-url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clearExplicitly: true }),
+    }).catch(() => {});
+
+    try {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('garment_sheets_config_changed'));
+      }
+    } catch {}
+
     return cleared;
   },
 

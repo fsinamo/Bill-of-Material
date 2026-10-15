@@ -121,6 +121,19 @@ export default function App() {
       if (calcs && calcs.length > 0) setCalculations(calcs);
     });
     storageService.syncPermanentCostings();
+
+    const handleConfigChange = () => {
+      setSheetsConfig(storageService.getSheetsConfig());
+    };
+    const handleCostingsChange = () => {
+      loadAllData();
+    };
+    window.addEventListener('garment_sheets_config_changed', handleConfigChange);
+    window.addEventListener('garment_costings_changed', handleCostingsChange);
+    return () => {
+      window.removeEventListener('garment_sheets_config_changed', handleConfigChange);
+      window.removeEventListener('garment_costings_changed', handleCostingsChange);
+    };
   }, []);
 
   // Handlers for calculations
@@ -540,6 +553,10 @@ export default function App() {
             initialCalculationId={selectedCostingCalculationId}
             onNavigateToConsumption={() => setActiveModule('consumption')}
             sheetsConfig={sheetsConfig}
+            onUpdateSheetsConfig={(newCfg) => {
+              setSheetsConfig(newCfg);
+              storageService.saveSheetsConfig(newCfg);
+            }}
             onCostingsUpdated={loadAllData}
           />
         )}
