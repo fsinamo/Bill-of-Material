@@ -881,4 +881,8 @@ export const sheetsSyncService = {
       return { success: false, message: `Gagal menarik data: ${msg}` };
     }
   },
+
+  getAppsScriptTemplate(): string {
+    return APPS_SCRIPT_TEMPLATE;
+  },
 };
