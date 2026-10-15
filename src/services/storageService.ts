@@ -575,7 +575,7 @@ export const storageService = {
     return updated;
   },
 
-  // Sheets Config with Multi-Tier Permanent Persistence (Server, IDB, LocalStorage Primary & Backup)
+  // Sheets Config with Multi-Tier Permanent Persistence (Server, IDB, LocalStorage Primary & Backup, Env)
   getSheetsConfig(): GoogleSheetsConfig {
     // Cookie helper for fallback survival across browser data wipes
     const getCookieUrl = (): string => {
@@ -597,6 +597,14 @@ export const storageService = {
         config = null;
       }
     }
+
+    // Check environment variable injected by Vite / server
+    let envUrl = '';
+    try {
+      if (typeof import.meta !== 'undefined' && import.meta.env) {
+        envUrl = (import.meta.env.VITE_GOOGLE_SHEETS_WEBAPP_URL as string) || '';
+      }
+    } catch {}
 
     // Fallback 1: check permanent backup config if webAppUrl is missing
     if (!config?.webAppUrl) {
@@ -643,9 +651,20 @@ export const storageService = {
       }
     }
 
+    // Fallback 4: check env variable
+    if (!config?.webAppUrl && envUrl && envUrl.trim().startsWith('http')) {
+      config = {
+        ...(config || {
+          spreadsheetName: 'Data_Produksi_Garment_Konsumsi_Bahan',
+          autoSyncOnSave: true,
+        }),
+        webAppUrl: envUrl.trim(),
+      };
+    }
+
     if (!config) {
       config = {
-        webAppUrl: '',
+        webAppUrl: envUrl.trim() || '',
         spreadsheetName: 'Data_Produksi_Garment_Konsumsi_Bahan',
         autoSyncOnSave: true,
       };
@@ -655,13 +674,27 @@ export const storageService = {
   },
 
   saveSheetsConfig(config: GoogleSheetsConfig): void {
+    const isExplicitClear = Boolean((config as any)?.clearExplicitly);
+
+    // Guard against accidental wiping: if incoming URL is blank but not explicitly cleared, preserve previous URL
+    let cleanUrl = (config.webAppUrl || '').trim();
+    if (!cleanUrl && !isExplicitClear) {
+      const previous = this.getSheetsConfig();
+      if (previous.webAppUrl && previous.webAppUrl.trim()) {
+        cleanUrl = previous.webAppUrl.trim();
+      }
+    }
+
+    const updatedConfig: GoogleSheetsConfig = {
+      ...config,
+      webAppUrl: cleanUrl,
+    };
+
     // 1. Primary localStorage
-    localStorage.setItem(KEYS.SHEETS_CONFIG, JSON.stringify(config));
+    localStorage.setItem(KEYS.SHEETS_CONFIG, JSON.stringify(updatedConfig));
 
     // 2. If valid webAppUrl is present, write to multiple independent backup keys
-    if (config.webAppUrl && config.webAppUrl.trim()) {
-      const cleanUrl = config.webAppUrl.trim();
-      const updatedConfig = { ...config, webAppUrl: cleanUrl };
+    if (cleanUrl) {
       localStorage.setItem(KEYS.SHEETS_CONFIG_BACKUP, JSON.stringify(updatedConfig));
       localStorage.setItem(KEYS.WEBAPP_URL_PERMANENT, cleanUrl);
       localStorage.setItem('garment_permanent_sheets_url', cleanUrl);
@@ -691,10 +724,9 @@ export const storageService = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ webAppUrl: cleanUrl }),
       }).catch(() => {});
-    } else {
-      // NOTE: We do NOT send an empty URL to the server here so we never accidentally wipe disk on client reboots!
-      // Server wiping only happens if clearSheetsConfigPermanently is explicitly invoked.
-      saveToIndexedDB('sheetsConfig', config);
+    } else if (isExplicitClear) {
+      saveToIndexedDB('sheetsConfig', updatedConfig);
+      saveToIndexedDB('webAppUrl', '');
     }
 
     try {

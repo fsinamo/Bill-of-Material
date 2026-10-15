@@ -2,6 +2,10 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
 import {
   INITIAL_RAW_MATERIALS,
   INITIAL_ACCESSORIES,
@@ -17,19 +21,40 @@ const app = express();
 const PORT = 3000;
 const HOST = '0.0.0.0';
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 const DATA_DIR = path.join(__dirname, 'data');
 const CONFIG_FILE = path.join(DATA_DIR, 'sheets-config.json');
 const URL_BACKUP_FILE = path.join(DATA_DIR, 'webapp-url.txt');
+const SECONDARY_BACKUP_FILE = path.join(DATA_DIR, 'sheets-url-permanent.txt');
+const ENV_FILE = path.join(__dirname, '.env');
 
 // Ensure data directory exists
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-// Helper to get persistent webAppUrl from either config file or dedicated text backup
-const SECONDARY_BACKUP_FILE = path.join(DATA_DIR, 'sheets-url-permanent.txt');
+// Read URL directly from .env file if present
+const readUrlFromEnvFile = (): string => {
+  try {
+    if (fs.existsSync(ENV_FILE)) {
+      const content = fs.readFileSync(ENV_FILE, 'utf-8');
+      const lines = content.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('VITE_GOOGLE_SHEETS_WEBAPP_URL=')) {
+          const val = trimmed.replace('VITE_GOOGLE_SHEETS_WEBAPP_URL=', '').trim();
+          if (val) return val;
+        }
+        if (trimmed.startsWith('GOOGLE_SHEETS_WEBAPP_URL=')) {
+          const val = trimmed.replace('GOOGLE_SHEETS_WEBAPP_URL=', '').trim();
+          if (val) return val;
+        }
+      }
+    }
+  } catch {}
+  return '';
+};
 
 const getPersistentWebAppUrl = (): string => {
   if (fs.existsSync(URL_BACKUP_FILE)) {
@@ -53,6 +78,9 @@ const getPersistentWebAppUrl = (): string => {
       }
     } catch {}
   }
+  const fromEnvFile = readUrlFromEnvFile();
+  if (fromEnvFile) return fromEnvFile;
+
   if (process.env.VITE_GOOGLE_SHEETS_WEBAPP_URL && process.env.VITE_GOOGLE_SHEETS_WEBAPP_URL.trim()) {
     return process.env.VITE_GOOGLE_SHEETS_WEBAPP_URL.trim();
   }
@@ -62,14 +90,96 @@ const getPersistentWebAppUrl = (): string => {
   return '';
 };
 
+// Permanent multi-layer persistence helper
+const persistUrlOnServer = (rawUrl: string) => {
+  const clean = (rawUrl || '').trim();
+  if (!clean || !clean.startsWith('http')) return;
+
+  try {
+    fs.writeFileSync(URL_BACKUP_FILE, clean, 'utf-8');
+    fs.writeFileSync(SECONDARY_BACKUP_FILE, clean, 'utf-8');
+
+    // Update config file
+    let existing: any = {
+      spreadsheetName: 'Data_Produksi_Garment_Konsumsi_Bahan',
+      autoSyncOnSave: true,
+    };
+    if (fs.existsSync(CONFIG_FILE)) {
+      try {
+        existing = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+      } catch {}
+    }
+    delete existing.clearExplicitly;
+    const updated = {
+      ...existing,
+      webAppUrl: clean,
+      lastUpdated: new Date().toISOString(),
+    };
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(updated, null, 2), 'utf-8');
+
+    // Update process.env runtime
+    process.env.VITE_GOOGLE_SHEETS_WEBAPP_URL = clean;
+    process.env.GOOGLE_SHEETS_WEBAPP_URL = clean;
+
+    // Update .env file on disk to survive container/process restarts
+    try {
+      let envContent = '';
+      if (fs.existsSync(ENV_FILE)) {
+        envContent = fs.readFileSync(ENV_FILE, 'utf-8');
+      }
+      let lines = envContent.split('\n').filter((l) =>
+        !l.trim().startsWith('VITE_GOOGLE_SHEETS_WEBAPP_URL=') &&
+        !l.trim().startsWith('GOOGLE_SHEETS_WEBAPP_URL=')
+      );
+      lines.push(`VITE_GOOGLE_SHEETS_WEBAPP_URL=${clean}`);
+      lines.push(`GOOGLE_SHEETS_WEBAPP_URL=${clean}`);
+      fs.writeFileSync(ENV_FILE, lines.join('\n').trim() + '\n', 'utf-8');
+    } catch {}
+  } catch (err) {
+    console.warn('Error persisting URL on server:', err);
+  }
+};
+
+const clearUrlOnServer = () => {
+  try {
+    if (fs.existsSync(URL_BACKUP_FILE)) {
+      try { fs.unlinkSync(URL_BACKUP_FILE); } catch {}
+    }
+    if (fs.existsSync(SECONDARY_BACKUP_FILE)) {
+      try { fs.unlinkSync(SECONDARY_BACKUP_FILE); } catch {}
+    }
+    if (fs.existsSync(CONFIG_FILE)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+        delete parsed.clearExplicitly;
+        parsed.webAppUrl = '';
+        parsed.lastUpdated = new Date().toISOString();
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(parsed, null, 2), 'utf-8');
+      } catch {}
+    }
+    delete process.env.VITE_GOOGLE_SHEETS_WEBAPP_URL;
+    delete process.env.GOOGLE_SHEETS_WEBAPP_URL;
+    if (fs.existsSync(ENV_FILE)) {
+      try {
+        const envContent = fs.readFileSync(ENV_FILE, 'utf-8');
+        const lines = envContent.split('\n').filter((l) =>
+          !l.trim().startsWith('VITE_GOOGLE_SHEETS_WEBAPP_URL=') &&
+          !l.trim().startsWith('GOOGLE_SHEETS_WEBAPP_URL=')
+        );
+        fs.writeFileSync(ENV_FILE, lines.join('\n').trim() + '\n', 'utf-8');
+      } catch {}
+    }
+  } catch {}
+};
+
 // Ensure sheets-config.json exists and sanitize on startup
+const startupUrl = getPersistentWebAppUrl();
 if (!fs.existsSync(CONFIG_FILE)) {
-  const existingUrl = getPersistentWebAppUrl();
   const initialConfig = {
-    webAppUrl: existingUrl,
+    webAppUrl: startupUrl,
     spreadsheetName: 'Data_Produksi_Garment_Konsumsi_Bahan',
     autoSyncOnSave: true,
-    lastUpdated: new Date().toISOString()
+    lastUpdated: new Date().toISOString(),
   };
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(initialConfig, null, 2), 'utf-8');
 } else {
@@ -82,9 +192,8 @@ if (!fs.existsSync(CONFIG_FILE)) {
       delete parsed.clearExplicitly;
       dirty = true;
     }
-    const backupUrl = getPersistentWebAppUrl();
-    if (!parsed.webAppUrl && backupUrl) {
-      parsed.webAppUrl = backupUrl;
+    if (!parsed.webAppUrl && startupUrl) {
+      parsed.webAppUrl = startupUrl;
       dirty = true;
     }
     if (dirty) {
@@ -103,38 +212,13 @@ app.post('/api/sheets-url', (req, res) => {
   try {
     const { webAppUrl, clearExplicitly } = req.body || {};
     if (clearExplicitly) {
-      if (fs.existsSync(URL_BACKUP_FILE)) {
-        try { fs.unlinkSync(URL_BACKUP_FILE); } catch {}
-      }
-      if (fs.existsSync(SECONDARY_BACKUP_FILE)) {
-        try { fs.unlinkSync(SECONDARY_BACKUP_FILE); } catch {}
-      }
-      if (fs.existsSync(CONFIG_FILE)) {
-        try {
-          const parsed = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
-          delete parsed.clearExplicitly;
-          parsed.webAppUrl = '';
-          fs.writeFileSync(CONFIG_FILE, JSON.stringify(parsed, null, 2), 'utf-8');
-        } catch {}
-      }
+      clearUrlOnServer();
       return res.json({ success: true, webAppUrl: '' });
     }
 
     const clean = (typeof webAppUrl === 'string') ? webAppUrl.trim() : '';
     if (clean) {
-      fs.writeFileSync(URL_BACKUP_FILE, clean, 'utf-8');
-      fs.writeFileSync(SECONDARY_BACKUP_FILE, clean, 'utf-8');
-      let existing: any = {};
-      if (fs.existsSync(CONFIG_FILE)) {
-        try { existing = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8')); } catch {}
-      }
-      delete existing.clearExplicitly;
-      const updated = {
-        ...existing,
-        webAppUrl: clean,
-        lastUpdated: new Date().toISOString(),
-      };
-      fs.writeFileSync(CONFIG_FILE, JSON.stringify(updated, null, 2), 'utf-8');
+      persistUrlOnServer(clean);
       return res.json({ success: true, webAppUrl: clean });
     }
     return res.json({ success: true, webAppUrl: getPersistentWebAppUrl() });
@@ -149,7 +233,7 @@ app.get('/api/sheets-config', (req, res) => {
     let parsed: any = {
       webAppUrl: '',
       spreadsheetName: 'Data_Produksi_Garment_Konsumsi_Bahan',
-      autoSyncOnSave: true
+      autoSyncOnSave: true,
     };
 
     if (fs.existsSync(CONFIG_FILE)) {
@@ -184,7 +268,19 @@ app.post('/api/sheets-config', (req, res) => {
       return res.status(400).json({ error: 'Invalid configuration payload' });
     }
 
-    // Merge with existing config if present
+    const clearExplicitly = Boolean(newConfig.clearExplicitly);
+    if (clearExplicitly) {
+      clearUrlOnServer();
+      return res.json({
+        success: true,
+        config: {
+          webAppUrl: '',
+          spreadsheetName: newConfig.spreadsheetName || 'Data_Produksi_Garment_Konsumsi_Bahan',
+          autoSyncOnSave: true,
+        },
+      });
+    }
+
     let existing: any = {};
     if (fs.existsSync(CONFIG_FILE)) {
       try {
@@ -195,38 +291,20 @@ app.post('/api/sheets-config', (req, res) => {
     }
     delete existing.clearExplicitly;
 
-    const clearExplicitly = Boolean(newConfig.clearExplicitly);
+    const incomingUrl = (newConfig.webAppUrl && typeof newConfig.webAppUrl === 'string') ? newConfig.webAppUrl.trim() : '';
+    const backupUrl = getPersistentWebAppUrl();
+    const targetUrl = incomingUrl || existing.webAppUrl || backupUrl || '';
 
-    let targetUrl = '';
-    if (clearExplicitly) {
-      targetUrl = '';
-      if (fs.existsSync(URL_BACKUP_FILE)) {
-        try { fs.unlinkSync(URL_BACKUP_FILE); } catch {}
-      }
-      if (fs.existsSync(SECONDARY_BACKUP_FILE)) {
-        try { fs.unlinkSync(SECONDARY_BACKUP_FILE); } catch {}
-      }
-    } else {
-      const incomingUrl = (newConfig.webAppUrl && typeof newConfig.webAppUrl === 'string') ? newConfig.webAppUrl.trim() : '';
-      const backupUrl = getPersistentWebAppUrl();
-      // If incomingUrl is present, update. If incomingUrl is empty, PRESERVE existing URL!
-      targetUrl = incomingUrl || existing.webAppUrl || backupUrl || '';
-
-      // Persist to backup text files whenever valid
-      if (targetUrl) {
-        fs.writeFileSync(URL_BACKUP_FILE, targetUrl, 'utf-8');
-        fs.writeFileSync(SECONDARY_BACKUP_FILE, targetUrl, 'utf-8');
-      }
+    if (targetUrl) {
+      persistUrlOnServer(targetUrl);
     }
 
     const merged = {
       ...existing,
       ...newConfig,
       webAppUrl: targetUrl,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
     };
-
-    // NEVER store clearExplicitly flag inside persistent config file
     delete merged.clearExplicitly;
 
     fs.writeFileSync(CONFIG_FILE, JSON.stringify(merged, null, 2), 'utf-8');
@@ -234,6 +312,112 @@ app.post('/api/sheets-config', (req, res) => {
   } catch (error) {
     console.error('Error saving sheets config:', error);
     return res.status(500).json({ error: 'Failed to persist sheets configuration' });
+  }
+});
+
+// =========================================================================
+// API: Server-side Proxy for Google Apps Script
+// Bypasses browser CORS issues & follows 302 redirects flawlessly in Node 22
+// =========================================================================
+app.post('/api/sheets-proxy', async (req, res) => {
+  try {
+    const { url, action, payload } = req.body || {};
+    const targetUrl = (typeof url === 'string' && url.trim()) ? url.trim() : getPersistentWebAppUrl();
+
+    if (!targetUrl || !targetUrl.startsWith('http')) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'URL Google Apps Script belum diatur atau tidak valid. Silakan atur di menu Sinkronisasi Sheets.',
+      });
+    }
+
+    // Auto-persist valid URL
+    persistUrlOnServer(targetUrl);
+
+    const postBody = payload
+      ? { ...payload, action: action || payload.action || 'push' }
+      : { action: action || 'ping' };
+
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      redirect: 'follow',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: JSON.stringify(postBody),
+    });
+
+    const rawText = await response.text();
+    let parsed: any;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      // Returned HTML (e.g. login redirect or permission denial)
+      if (rawText.includes('ServiceLogin') || rawText.includes('accounts.google.com')) {
+        return res.json({
+          status: 'error',
+          message: 'Google memblokir akses otomatis (mengalihkan ke login). Solusi: Di editor Apps Script Anda, buka menu Deploy > Manage deployments > Edit > ganti "Who has access" menjadi "Anyone" (Siapa saja).',
+        });
+      }
+      return res.json({
+        status: 'error',
+        message: 'Google Sheets mengembalikan format bukan JSON. Pastikan Web App disetel "Who has access: Anyone".',
+        rawPreview: rawText.slice(0, 250),
+      });
+    }
+
+    return res.json(parsed);
+  } catch (error: any) {
+    console.error('Error in /api/sheets-proxy (POST):', error);
+    return res.status(500).json({
+      status: 'error',
+      message: `Gagal tersambung ke Google Sheets via server: ${error.message || String(error)}`,
+    });
+  }
+});
+
+app.get('/api/sheets-proxy', async (req, res) => {
+  try {
+    const rawUrl = (req.query.url as string) || '';
+    const targetUrl = (rawUrl && rawUrl.trim()) || getPersistentWebAppUrl();
+    const action = (req.query.action as string) || 'pull';
+
+    if (!targetUrl || !targetUrl.startsWith('http')) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'URL Google Apps Script belum diatur atau tidak valid.',
+      });
+    }
+
+    persistUrlOnServer(targetUrl);
+
+    const sep = targetUrl.includes('?') ? '&' : '?';
+    const finalUrl = `${targetUrl}${sep}action=${encodeURIComponent(action)}&_t=${Date.now()}`;
+
+    const response = await fetch(finalUrl, {
+      method: 'GET',
+      redirect: 'follow',
+    });
+
+    const rawText = await response.text();
+    let parsed: any;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      return res.json({
+        status: 'error',
+        message: 'Google Sheets mengembalikan respons bukan JSON.',
+        rawPreview: rawText.slice(0, 250),
+      });
+    }
+
+    return res.json(parsed);
+  } catch (error: any) {
+    console.error('Error in /api/sheets-proxy (GET):', error);
+    return res.status(500).json({
+      status: 'error',
+      message: `Gagal menarik data via server proxy: ${error.message || String(error)}`,
+    });
   }
 });
 

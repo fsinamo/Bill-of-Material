@@ -143,11 +143,14 @@ function doPost(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    if (action === 'save_costing') {
-      appendOrUpdateCosting(ss, postData.costing);
+    if (action === 'save_costing' || action === 'costing') {
+      var itemToSave = postData.costing || (postData.costings && postData.costings[0]);
+      if (itemToSave) {
+        appendOrUpdateCosting(ss, itemToSave);
+      }
       return ContentService.createTextOutput(JSON.stringify({
         status: 'success',
-        message: 'Costing ' + ((postData.costing && postData.costing.costingNumber) || '') + ' berhasil disimpan di Google Sheets!',
+        message: 'Costing ' + ((itemToSave && itemToSave.costingNumber) || '') + ' berhasil disimpan di Google Sheets (Tab Product_Costing)!',
         timestamp: new Date().toISOString()
       })).setMimeType(ContentService.MimeType.JSON);
     }
@@ -547,6 +550,73 @@ function parseAppsScriptResponse(rawText: string, targetUrl: string): any {
   }
 }
 
+/**
+ * Executes a request to Google Apps Script via the local Express server proxy first.
+ * The server proxy runs Node 22 native fetch, eliminating browser CORS issues and
+ * reliably handling Google Apps Script 302 redirects.
+ * Falls back to direct browser fetch if the proxy is unavailable.
+ */
+async function executeViaProxyOrDirect(
+  url: string,
+  action: string,
+  payload?: any,
+  method: 'POST' | 'GET' = 'POST'
+): Promise<any> {
+  const cleanUrl = url.trim();
+
+  // 1. Try local server proxy first
+  try {
+    if (method === 'POST') {
+      const proxyRes = await fetch('/api/sheets-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: cleanUrl, action, payload }),
+      });
+      if (proxyRes.ok) {
+        const json = await proxyRes.json();
+        if (json && typeof json === 'object') {
+          return json;
+        }
+      }
+    } else {
+      const sep = cleanUrl.includes('?') ? '&' : '?';
+      const proxyRes = await fetch(
+        `/api/sheets-proxy?url=${encodeURIComponent(cleanUrl)}&action=${encodeURIComponent(action)}`
+      );
+      if (proxyRes.ok) {
+        const json = await proxyRes.json();
+        if (json && typeof json === 'object') {
+          return json;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[GarmentPro] Server proxy fetch error, attempting direct browser fetch fallback:', err);
+  }
+
+  // 2. Direct browser fetch fallback
+  if (method === 'POST') {
+    const postRes = await fetch(cleanUrl, {
+      method: 'POST',
+      mode: 'cors',
+      redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action, ...(payload || {}) }),
+    });
+    const text = await postRes.text();
+    return parseAppsScriptResponse(text, cleanUrl);
+  } else {
+    const sep = cleanUrl.includes('?') ? '&' : '?';
+    const getRes = await fetch(`${cleanUrl}${sep}action=${encodeURIComponent(action)}&_t=${Date.now()}`, {
+      method: 'GET',
+      mode: 'cors',
+      redirect: 'follow',
+    });
+    const text = await getRes.text();
+    return parseAppsScriptResponse(text, cleanUrl);
+  }
+}
+
 export const sheetsSyncService = {
   async testConnection(url: string): Promise<{ success: boolean; message: string; data?: unknown }> {
     const check = validateAndSanitizeUrl(url);
@@ -555,41 +625,10 @@ export const sheetsSyncService = {
     }
 
     const cleanUrl = check.url;
-    let rawText = '';
 
     try {
-      // 1. Try GET ping
-      const pingUrl = `${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}action=ping&_t=${Date.now()}`;
-      const response = await fetch(pingUrl, {
-        method: 'GET',
-        mode: 'cors',
-        redirect: 'follow',
-      });
-
-      rawText = await response.text();
-    } catch (err: unknown) {
-      // 2. Try POST fallback if GET was blocked
-      try {
-        const postRes = await fetch(cleanUrl, {
-          method: 'POST',
-          mode: 'cors',
-          redirect: 'follow',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: 'ping' }),
-        });
-        rawText = await postRes.text();
-      } catch {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        return {
-          success: false,
-          message: `Gagal tersambung ke server Google: ${errorMsg}. Pastikan perangkat terhubung internet dan URL diawali https://script.google.com/`,
-        };
-      }
-    }
-
-    try {
-      const result = parseAppsScriptResponse(rawText, cleanUrl);
-      if (result.status === 'success') {
+      const result = await executeViaProxyOrDirect(cleanUrl, 'ping', { action: 'ping' }, 'POST');
+      if (result && result.status === 'success') {
         return {
           success: true,
           message: result.message || `Koneksi ke Google Sheets berhasil! ${result.spreadsheetName ? `(Spreadsheet: ${result.spreadsheetName})` : ''}`,
@@ -598,14 +637,14 @@ export const sheetsSyncService = {
       } else {
         return {
           success: false,
-          message: result.message || 'Apps Script merespons status error.',
+          message: result?.message || 'Apps Script merespons status error.',
         };
       }
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       return {
         success: false,
-        message: errorMsg,
+        message: `Gagal tersambung ke Google Sheets: ${errorMsg}. Pastikan Web App disetel "Who has access: Anyone".`,
       };
     }
   },
@@ -634,24 +673,13 @@ export const sheetsSyncService = {
     const costingsToPush = data.costings || storageService.getProductCostings();
 
     try {
-      const response = await fetch(cleanUrl, {
-        method: 'POST',
-        mode: 'cors',
-        redirect: 'follow',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8',
-        },
-        body: JSON.stringify({
-          action: 'push_all',
-          ...data,
-          costings: costingsToPush,
-        }),
+      const result = await executeViaProxyOrDirect(cleanUrl, 'push_all', {
+        action: 'push_all',
+        ...data,
+        costings: costingsToPush,
       });
 
-      const rawText = await response.text();
-      const result = parseAppsScriptResponse(rawText, cleanUrl);
-
-      if (result.status === 'success') {
+      if (result && result.status === 'success') {
         const updatedCalcs = data.calculations.map((c) => ({
           ...c,
           syncStatus: 'synced' as const,
@@ -667,7 +695,7 @@ export const sheetsSyncService = {
 
         return { success: true, message: result.message || 'Sinkronisasi berhasil!' };
       } else {
-        throw new Error(result.message || 'Gagal push ke Google Sheets');
+        throw new Error(result?.message || 'Gagal push ke Google Sheets');
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -689,23 +717,12 @@ export const sheetsSyncService = {
     const cleanUrl = check.url;
 
     try {
-      const response = await fetch(cleanUrl, {
-        method: 'POST',
-        mode: 'cors',
-        redirect: 'follow',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8',
-        },
-        body: JSON.stringify({
-          action: 'save_calculation',
-          calculation: calc,
-        }),
+      const result = await executeViaProxyOrDirect(cleanUrl, 'save_calculation', {
+        action: 'save_calculation',
+        calculation: calc,
       });
 
-      const rawText = await response.text();
-      const result = parseAppsScriptResponse(rawText, cleanUrl);
-
-      if (result.status === 'success') {
+      if (result && result.status === 'success') {
         storageService.addSyncLog({
           action: `Sync Kalkulasi ${calc.calculationNumber}`,
           status: 'success',
@@ -713,7 +730,7 @@ export const sheetsSyncService = {
         });
         return { success: true, message: result.message || 'Tersinkron ke Google Sheets!' };
       } else {
-        throw new Error(result.message || 'Gagal menyimpan ke Google Sheets');
+        throw new Error(result?.message || 'Gagal menyimpan ke Google Sheets');
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -735,41 +752,48 @@ export const sheetsSyncService = {
     const cleanUrl = check.url;
 
     try {
-      const response = await fetch(cleanUrl, {
-        method: 'POST',
-        mode: 'cors',
-        redirect: 'follow',
-        headers: {
-          'Content-Type': 'text/plain;charset=utf-8',
-        },
-        body: JSON.stringify({
-          action: 'save_costing',
-          costing: costing,
-          // Extra compatibility payload for transitional scripts
-          costings: [costing],
-        }),
+      // 1. Try dedicated action: save_costing
+      let result = await executeViaProxyOrDirect(cleanUrl, 'save_costing', {
+        action: 'save_costing',
+        costing: costing,
+        costings: [costing],
       });
 
-      const rawText = await response.text();
-      const result = parseAppsScriptResponse(rawText, cleanUrl);
+      // 2. Compatibility fallback for older scripts: if save_costing is unrecognized, push all costings
+      if (
+        result &&
+        result.status !== 'success' &&
+        (result.message?.includes('tidak dikenali') || result.message?.includes('save_costing'))
+      ) {
+        console.warn('save_costing not recognized, retrying via push_all fallback with costing list...');
+        const allCostings = storageService.getProductCostings();
+        const existingIdx = allCostings.findIndex((c) => c.id === costing.id);
+        if (existingIdx >= 0) {
+          allCostings[existingIdx] = costing;
+        } else {
+          allCostings.unshift(costing);
+        }
+        result = await executeViaProxyOrDirect(cleanUrl, 'push_all', {
+          action: 'push_all',
+          costings: allCostings,
+          costing: costing,
+          calculations: storageService.getCalculations(),
+          products: storageService.getProducts(),
+          rawMaterials: storageService.getRawMaterials(),
+          accessories: storageService.getAccessories(),
+        });
+      }
 
-      if (result.status === 'success') {
+      if (result && result.status === 'success') {
         storageService.addSyncLog({
           action: `Sync Costing ${costing.costingNumber}`,
           status: 'success',
           message: `Costing HPP ${costing.costingNumber} (${costing.productName}) tersimpan di Google Sheets (Tab Product_Costing)`,
         });
         return { success: true, message: result.message || 'Costing HPP tersinkron ke Google Sheets!' };
+      } else {
+        throw new Error(result?.message || 'Gagal menyimpan costing ke Google Sheets');
       }
-
-      // If action is not recognized, the user's deployed script is an older version
-      if (result.message && (result.message.includes('tidak dikenali') || result.message.includes('save_costing'))) {
-        throw new Error(
-          'Kode Apps Script di Google Sheets Anda adalah versi lama dan belum memiliki fitur penyimpanan Product Costing. Silakan buka pengaturan Google Sheets > klik "Salin Kode Apps Script Terbaru" > tempel di menu Extensions > Apps Script pada Spreadsheet Anda > klik Deploy > New deployment (Web app, Anyone).'
-        );
-      }
-
-      throw new Error(result.message || 'Gagal menyimpan costing ke Google Sheets');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       storageService.addSyncLog({
@@ -800,50 +824,11 @@ export const sheetsSyncService = {
     }
 
     const cleanUrl = check.url;
-    let rawText = '';
-    let lastError: Error | null = null;
-
-    // 1. Try GET request first
-    try {
-      const pullUrl = `${cleanUrl}${cleanUrl.includes('?') ? '&' : '?'}action=pull&_t=${Date.now()}`;
-      const response = await fetch(pullUrl, {
-        method: 'GET',
-        mode: 'cors',
-        redirect: 'follow',
-      });
-      rawText = await response.text();
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-    }
-
-    // 2. If GET returned HTML or failed, try POST with action: 'pull' (which avoids some CORS issues)
-    if (!rawText || rawText.trim().startsWith('<')) {
-      try {
-        const postResponse = await fetch(cleanUrl, {
-          method: 'POST',
-          mode: 'cors',
-          redirect: 'follow',
-          headers: {
-            'Content-Type': 'text/plain;charset=utf-8',
-          },
-          body: JSON.stringify({ action: 'pull' }),
-        });
-        const postText = await postResponse.text();
-        if (postText && !postText.trim().startsWith('<')) {
-          rawText = postText;
-        }
-      } catch (postErr) {
-        if (!lastError) {
-          lastError = postErr instanceof Error ? postErr : new Error(String(postErr));
-        }
-      }
-    }
 
     try {
-      const result = parseAppsScriptResponse(rawText, cleanUrl);
+      const result = await executeViaProxyOrDirect(cleanUrl, 'pull', { action: 'pull' }, 'GET');
 
-      if (result.status === 'success' && result.data) {
-        // Ensure costings items are properly normalized from JSON column if needed
+      if (result && result.status === 'success' && result.data) {
         if (Array.isArray(result.data.costings)) {
           result.data.costings = result.data.costings.map((c: any) => {
             if ((!c.items || !Array.isArray(c.items) || c.items.length === 0) && c['Rincian Item (JSON)']) {
@@ -869,7 +854,7 @@ export const sheetsSyncService = {
           data: result.data,
         };
       } else {
-        throw new Error(result.message || 'Format data Google Sheets tidak sesuai');
+        throw new Error(result?.message || 'Format data Google Sheets tidak sesuai');
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

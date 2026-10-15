@@ -123,12 +123,18 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   const [isSyncingSheets, setIsSyncingSheets] = useState<boolean>(false);
 
   // Effective Google Sheets Configuration (reactive with storageService fallback)
+  const initialKnownUrl = (
+    propSheetsConfig?.webAppUrl ||
+    storageService.getSheetsConfig()?.webAppUrl ||
+    ''
+  ).trim();
+
   const [effectiveSheetsConfig, setEffectiveSheetsConfig] = useState<GoogleSheetsConfig>(() =>
     propSheetsConfig?.webAppUrl ? propSheetsConfig : storageService.getSheetsConfig()
   );
   const [isSheetsModalOpen, setIsSheetsModalOpen] = useState(false);
-  const [inlineSheetsUrl, setInlineSheetsUrl] = useState('');
-  const [modalSheetsUrl, setModalSheetsUrl] = useState('');
+  const [inlineSheetsUrl, setInlineSheetsUrl] = useState(initialKnownUrl);
+  const [modalSheetsUrl, setModalSheetsUrl] = useState(initialKnownUrl);
   const [sheetsTestStatus, setSheetsTestStatus] = useState<{ success: boolean; message: string } | null>(null);
   const [isTestingSheets, setIsTestingSheets] = useState(false);
   const [copiedScript, setCopiedScript] = useState(false);
@@ -137,9 +143,9 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   useEffect(() => {
     const cfg = propSheetsConfig?.webAppUrl ? propSheetsConfig : storageService.getSheetsConfig();
     setEffectiveSheetsConfig(cfg);
-    if (cfg.webAppUrl) {
-      setModalSheetsUrl(cfg.webAppUrl);
-      setInlineSheetsUrl(cfg.webAppUrl);
+    if (cfg.webAppUrl && cfg.webAppUrl.trim()) {
+      setModalSheetsUrl(cfg.webAppUrl.trim());
+      setInlineSheetsUrl(cfg.webAppUrl.trim());
     }
   }, [propSheetsConfig]);
 
@@ -148,9 +154,9 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     const handleSheetsConfigChange = () => {
       const cfg = storageService.getSheetsConfig();
       setEffectiveSheetsConfig(cfg);
-      if (cfg.webAppUrl) {
-        setModalSheetsUrl(cfg.webAppUrl);
-        setInlineSheetsUrl(cfg.webAppUrl);
+      if (cfg.webAppUrl && cfg.webAppUrl.trim()) {
+        setModalSheetsUrl(cfg.webAppUrl.trim());
+        setInlineSheetsUrl(cfg.webAppUrl.trim());
       }
     };
     const handleCostingsChange = () => {
@@ -164,8 +170,8 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
     storageService.syncPermanentSheetsConfig().then((synced) => {
       if (synced && synced.webAppUrl) {
         setEffectiveSheetsConfig(synced);
-        setModalSheetsUrl(synced.webAppUrl);
-        setInlineSheetsUrl(synced.webAppUrl);
+        setModalSheetsUrl(synced.webAppUrl.trim());
+        setInlineSheetsUrl(synced.webAppUrl.trim());
         if (onUpdateSheetsConfig) onUpdateSheetsConfig(synced);
       }
     });
@@ -219,29 +225,37 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   // Sync permanent costings from server, IndexedDB, and Google Sheets on load
   useEffect(() => {
     storageService.syncPermanentCostings().then(async (costings) => {
-      if (costings && costings.length > 0) {
-        setSavedCostings(costings);
-      } else {
-        const targetUrl = (effectiveSheetsConfig?.webAppUrl || '').trim();
-        if (targetUrl) {
-          setIsSyncingSheets(true);
-          try {
-            const pullRes = await sheetsSyncService.pullAllFromSheets(targetUrl);
-            if (pullRes.success && pullRes.data?.costings && pullRes.data.costings.length > 0) {
-              storageService.saveProductCostings(pullRes.data.costings);
-              setSavedCostings(pullRes.data.costings);
-              setNotice(`✓ Berhasil memulihkan ${pullRes.data.costings.length} arsip costing dari Google Sheets.`);
-              setTimeout(() => setNotice(null), 4000);
-            }
-          } catch {
-            // ignore
-          } finally {
-            setIsSyncingSheets(false);
+      const currentCostings = costings || [];
+      if (currentCostings.length > 0) {
+        setSavedCostings(currentCostings);
+      }
+      
+      const targetUrl = (
+        inlineSheetsUrl.trim() ||
+        modalSheetsUrl.trim() ||
+        effectiveSheetsConfig?.webAppUrl ||
+        storageService.getSheetsConfig()?.webAppUrl ||
+        ''
+      ).trim();
+
+      if (targetUrl) {
+        try {
+          const pullRes = await sheetsSyncService.pullAllFromSheets(targetUrl);
+          if (pullRes.success && pullRes.data?.costings && pullRes.data.costings.length > 0) {
+            const sheetCostings = pullRes.data.costings;
+            const mergedMap = new Map<string, ProductCostingRecord>();
+            currentCostings.forEach((c) => mergedMap.set(c.id, c));
+            sheetCostings.forEach((c) => mergedMap.set(c.id, c));
+            const merged = Array.from(mergedMap.values());
+            storageService.saveProductCostings(merged);
+            setSavedCostings(merged);
           }
+        } catch {
+          // ignore
         }
       }
     });
-  }, [propSheetsConfig, effectiveSheetsConfig?.webAppUrl]);
+  }, [propSheetsConfig?.webAppUrl, effectiveSheetsConfig?.webAppUrl]);
 
   // Form states
   const [selectedProductId, setSelectedProductId] = useState<string>(
@@ -922,13 +936,14 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
 
     const targetUrl = (
       inlineSheetsUrl.trim() ||
+      modalSheetsUrl.trim() ||
       effectiveSheetsConfig?.webAppUrl ||
       storageService.getSheetsConfig()?.webAppUrl ||
       ''
     ).trim();
 
-    if (inlineSheetsUrl.trim() && inlineSheetsUrl.trim() !== effectiveSheetsConfig?.webAppUrl) {
-      handleSaveAndConnectUrl(inlineSheetsUrl.trim(), false);
+    if (targetUrl && targetUrl !== effectiveSheetsConfig?.webAppUrl) {
+      handleSaveAndConnectUrl(targetUrl, false);
     }
 
     if (targetUrl) {
@@ -950,7 +965,8 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
         setTimeout(() => setNotice(null), 6000);
       });
     } else {
-      setNotice(`✓ Dokumen Costing "${record.costingNumber}" berhasil diperbarui di komputer lokal (${updatedItems.length} item). ⚠️ Catatan: Google Sheets belum terhubung. Klik tombol "Hubungkan Google Sheets" di atas agar otomatis tersimpan ke Spreadsheet.`);
+      setIsSheetsModalOpen(true);
+      setNotice(`✓ Dokumen Costing "${record.costingNumber}" tersimpan di komputer lokal (${updatedItems.length} item). Silakan masukkan Web App URL Google Sheets agar otomatis tersimpan ke Spreadsheet!`);
       setTimeout(() => setNotice(null), 6000);
     }
   };
@@ -1003,13 +1019,14 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
 
     const targetUrl = (
       inlineSheetsUrl.trim() ||
+      modalSheetsUrl.trim() ||
       effectiveSheetsConfig?.webAppUrl ||
       storageService.getSheetsConfig()?.webAppUrl ||
       ''
     ).trim();
 
-    if (inlineSheetsUrl.trim() && inlineSheetsUrl.trim() !== effectiveSheetsConfig?.webAppUrl) {
-      handleSaveAndConnectUrl(inlineSheetsUrl.trim(), false);
+    if (targetUrl && targetUrl !== effectiveSheetsConfig?.webAppUrl) {
+      handleSaveAndConnectUrl(targetUrl, false);
     }
 
     if (targetUrl) {
@@ -1031,15 +1048,24 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
         setTimeout(() => setNotice(null), 6000);
       });
     } else {
-      setNotice(`✓ Dokumen baru Costing "${finalNum}" berhasil dibuat di komputer lokal (${updatedItems.length} item). ⚠️ Catatan: Google Sheets belum terhubung. Klik tombol "Hubungkan Google Sheets" di atas agar otomatis tersimpan ke Spreadsheet.`);
+      setIsSheetsModalOpen(true);
+      setNotice(`✓ Dokumen baru Costing "${finalNum}" dibuat di komputer lokal (${updatedItems.length} item). Silakan masukkan Web App URL Google Sheets agar tersimpan ke Spreadsheet!`);
       setTimeout(() => setNotice(null), 6000);
     }
   };
 
   const handleSyncSingleCostingToSheets = async (rec: ProductCostingRecord) => {
-    const targetUrl = (effectiveSheetsConfig?.webAppUrl || storageService.getSheetsConfig()?.webAppUrl || '').trim();
+    const targetUrl = (
+      inlineSheetsUrl.trim() ||
+      modalSheetsUrl.trim() ||
+      effectiveSheetsConfig?.webAppUrl ||
+      storageService.getSheetsConfig()?.webAppUrl ||
+      ''
+    ).trim();
+
     if (!targetUrl) {
-      setNotice('Web App URL Google Sheets belum diatur. Silakan atur URL di menu Sinkronisasi Sheets.');
+      setIsSheetsModalOpen(true);
+      setNotice('Web App URL Google Sheets belum diatur. Silakan masukkan Web App URL Anda.');
       setTimeout(() => setNotice(null), 4000);
       return;
     }
@@ -1060,9 +1086,17 @@ export const ProductCostingView: React.FC<ProductCostingViewProps> = ({
   };
 
   const handleSyncAllCostingsToSheets = async () => {
-    const targetUrl = (effectiveSheetsConfig?.webAppUrl || storageService.getSheetsConfig()?.webAppUrl || '').trim();
+    const targetUrl = (
+      inlineSheetsUrl.trim() ||
+      modalSheetsUrl.trim() ||
+      effectiveSheetsConfig?.webAppUrl ||
+      storageService.getSheetsConfig()?.webAppUrl ||
+      ''
+    ).trim();
+
     if (!targetUrl) {
-      setNotice('Web App URL Google Sheets belum diatur. Silakan atur URL di menu Sinkronisasi Sheets.');
+      setIsSheetsModalOpen(true);
+      setNotice('Web App URL Google Sheets belum diatur. Silakan masukkan Web App URL Anda.');
       setTimeout(() => setNotice(null), 4000);
       return;
     }
